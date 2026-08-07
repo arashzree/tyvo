@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background-color: #0a0a0a;
+  color: #f5f3ef;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+* {
+  scrollbar-color: #232323 #0a0a0a;
+}
+
+/* Visible keyboard focus everywhere — quality floor from the design skill */
+:focus-visible {
+  outline: 2px solid #c41e2a;
+  outline-offset: 3px;
+}
