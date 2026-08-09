@@ -1,16 +1,28 @@
-<svg width="200" height="80" viewBox="0 0 200 80" xmlns="http://www.w3.org/2000/svg">
-  <!-- PLACEHOLDER: styled text mark only. Do NOT guess at the real
-       "red T with sail/flag motif" icon shape — replace this file
-       once the real logo SVG is provided. -->
+<svg width="200" height="90" viewBox="0 0 200 90" xmlns="http://www.w3.org/2000/svg">
+  <!-- PLACEHOLDER ONLY. The official logo is: a red T icon, a "Tyvo"
+       wordmark in Cream, and a smaller "MEDIA" line underneath. Do NOT
+       treat this text-only mark as a substitute for the real logo
+       assets — replace this file once they're provided. -->
   <text
     x="50%"
-    y="55%"
+    y="42%"
     dominant-baseline="middle"
     text-anchor="middle"
     font-family="sans-serif"
     font-weight="700"
     font-size="40"
     letter-spacing="4"
-    fill="#C41E2A"
-  >TYV</text>
+    fill="#B52524"
+  >Tyvo</text>
+  <text
+    x="50%"
+    y="68%"
+    dominant-baseline="middle"
+    text-anchor="middle"
+    font-family="sans-serif"
+    font-weight="600"
+    font-size="13"
+    letter-spacing="6"
+    fill="#FFECD3"
+  >MEDIA</text>
 </svg>

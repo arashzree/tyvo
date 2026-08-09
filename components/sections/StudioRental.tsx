@@ -12,7 +12,7 @@ export function StudioRental() {
       <AmbientBackground />
       <RevealSection id="studio-rental" className="relative z-10 mx-auto max-w-2xl">
         <SectionLabel number={t('label')} kicker={t('kicker')} />
-        <h2 className="mb-6 text-3xl font-bold text-paper md:text-5xl">{t('heading')}</h2>
+        <h2 className="mb-6 text-3xl font-heading-black text-paper md:text-5xl">{t('heading')}</h2>
         <p className="mb-8 text-lg leading-relaxed text-paper-dim">{t('body')}</p>
         <ul className="grid gap-3 sm:grid-cols-3">
           {highlights.map((item) => (

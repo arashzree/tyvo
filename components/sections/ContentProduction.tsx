@@ -12,7 +12,7 @@ export function ContentProduction() {
       <RevealSection id="content-production" className="relative z-10 mx-auto grid max-w-5xl gap-12 md:grid-cols-2 md:items-center">
         <div>
           <SectionLabel number={t('label')} kicker={t('kicker')} />
-          <h2 className="mb-6 text-3xl font-bold text-paper md:text-5xl">{t('heading')}</h2>
+          <h2 className="mb-6 text-3xl font-heading-black text-paper md:text-5xl">{t('heading')}</h2>
           <p className="text-lg leading-relaxed text-paper-dim">{t('body')}</p>
         </div>
         <div

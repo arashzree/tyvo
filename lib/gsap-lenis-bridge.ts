@@ -73,4 +73,23 @@ export function setLenisEnabled(enabled: boolean): void {
   }
 }
 
+/**
+ * Smoothly scrolls to a section by its DOM id, using the same Lenis
+ * instance driving the rest of the page — this is how selecting a
+ * Hero monolith actually "navigates" to its section, since the site
+ * is a single continuous vertical scroll rather than routed pages.
+ */
+export function scrollToElement(id: string): void {
+  const target = document.getElementById(id);
+  if (!target) {
+    console.warn(`scrollToElement: no element with id "${id}" found`);
+    return;
+  }
+  if (lenisInstance) {
+    lenisInstance.scrollTo(target, { duration: 1.4 });
+  } else {
+    target.scrollIntoView({ behavior: 'smooth' });
+  }
+}
+
 export { gsap, ScrollTrigger };

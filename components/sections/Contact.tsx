@@ -17,7 +17,7 @@ export function Contact() {
     <section className="relative min-h-screen bg-ink-soft px-6 py-24 md:px-16">
       <RevealSection id="contact" className="mx-auto max-w-xl">
         <p className="mb-2 text-sm uppercase tracking-wideish text-accent">{t('kicker')}</p>
-        <h2 className="mb-4 text-3xl font-bold text-paper md:text-5xl">{t('heading')}</h2>
+        <h2 className="mb-4 text-3xl font-heading-black text-paper md:text-5xl">{t('heading')}</h2>
         <p className="mb-10 text-lg leading-relaxed text-paper-dim">{t('body')}</p>
 
         <form
@@ -58,7 +58,7 @@ export function Contact() {
             {footer('twitter')}
           </a>
         </div>
-        <p>© {new Date().getFullYear()} TYV Media — {footer('rights')}</p>
+        <p>© {new Date().getFullYear()} Tyvo Media — {footer('rights')}</p>
       </footer>
     </section>
   );

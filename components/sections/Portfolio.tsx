@@ -12,7 +12,7 @@ export function Portfolio() {
     <section className="relative min-h-screen bg-ink-soft px-6 py-24 md:px-16">
       <RevealSection id="portfolio" className="mx-auto max-w-6xl">
         <SectionLabel number={t('label')} kicker={t('kicker')} />
-        <h2 className="mb-4 text-3xl font-bold text-paper md:text-5xl">{t('heading')}</h2>
+        <h2 className="mb-4 text-3xl font-heading-black text-paper md:text-5xl">{t('heading')}</h2>
         <p className="mb-12 max-w-xl text-lg leading-relaxed text-paper-dim">{t('body')}</p>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

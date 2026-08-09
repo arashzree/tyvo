@@ -1,90 +1,66 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { useTranslations } from 'next-intl';
-import { gsap } from '@/lib/gsap-lenis-bridge';
-import { useReducedMotion } from '@/hooks/useReducedMotion';
+import dynamic from 'next/dynamic';
+import { useCallback, useState } from 'react';
+import { scrollToElement } from '@/lib/gsap-lenis-bridge';
+import { resolveSectionAnchor } from '@/lib/hero3d/sectionResolver';
+
+// Client-only: the scene talks to WebGL/window directly (K-Spline's
+// package, not React Three Fiber), so it cannot run during SSR.
+const TyvoHeroScene = dynamic(
+  () => import('@/components/hero3d/TyvoHeroScene').then((m) => m.TyvoHeroScene),
+  { ssr: false }
+);
 
 /**
- * Hero / Entrance. A single "opening a door" motion beat on load —
- * heavy, deliberate easing, not snappy or bouncy. This is a load-time
- * reveal (not scroll-triggered), since it's the very first thing seen.
+ * Hero / Entrance — now the 3D horizontal spatial navigation system
+ * (7 monoliths) per the architecture update. The previous "opening a
+ * door" 2D reveal is retired; see git history if it's needed again.
+ *
+ * This component owns ONLY navigation/content concerns (per the
+ * brief's ownership split): it receives a raw sectionId from the 3D
+ * scene via onSelect, resolves it to an actual DOM anchor, and
+ * triggers the existing Lenis-driven smooth scroll. It does not know
+ * or care how the 3D objects are rendered.
+ *
+ * Horizontal interaction is scoped entirely to this component's
+ * canvas — the rest of the site (below this section) remains a
+ * normal vertical scroll, unchanged.
  */
 export function Hero() {
-  const t = useTranslations('hero');
-  const doorLeftRef = useRef<HTMLDivElement>(null);
-  const doorRightRef = useRef<HTMLDivElement>(null);
-  const logoRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const reducedMotion = useReducedMotion();
+  const [unmappedNotice, setUnmappedNotice] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (reducedMotion) {
-      gsap.set([doorLeftRef.current, doorRightRef.current], { autoAlpha: 0 });
-      gsap.set(contentRef.current, { autoAlpha: 1 });
+  const handleSelect = useCallback((sectionId: string) => {
+    const resolution = resolveSectionAnchor(sectionId);
+
+    if (resolution.status === 'resolved') {
+      setUnmappedNotice(null);
+      scrollToElement(resolution.anchorId);
       return;
     }
 
-    const tl = gsap.timeline({ delay: 0.2 });
-
-    tl.set(contentRef.current, { autoAlpha: 0 })
-      .set(logoRef.current, { autoAlpha: 0, scale: 0.92 })
-      .to(logoRef.current, {
-        autoAlpha: 1,
-        scale: 1,
-        duration: 1.6,
-        ease: 'power2.inOut',
-      })
-      .to(
-        [doorLeftRef.current, doorRightRef.current],
-        {
-          xPercent: (i) => (i === 0 ? -100 : 100),
-          duration: 1.8,
-          ease: 'power2.inOut',
-        },
-        '+=0.3'
-      )
-      .to(
-        contentRef.current,
-        { autoAlpha: 1, duration: 1, ease: 'power2.out' },
-        '-=0.6'
-      );
-
-    return () => {
-      tl.kill();
-    };
-  }, [reducedMotion]);
+    // Defensive fallback for sectionIds with no matching section yet
+    // ("equipment", "services" as of the current heroObjects.config.js).
+    // Does not navigate anywhere or crash — surfaces the gap instead.
+    console.warn(
+      `Hero: monolith mapped to sectionId "${resolution.sectionId}", which has no matching section yet.`
+    );
+    setUnmappedNotice(resolution.sectionId);
+  }, []);
 
   return (
-    <section className="relative flex h-[100vh] items-center justify-center overflow-hidden bg-ink">
-      {/* The two "door" panels that part to reveal the brand space */}
-      <div
-        ref={doorLeftRef}
-        aria-hidden
-        className="absolute inset-y-0 left-0 z-20 w-1/2 bg-ink-soft ltr:origin-left rtl:origin-right"
-      />
-      <div
-        ref={doorRightRef}
-        aria-hidden
-        className="absolute inset-y-0 right-0 z-20 w-1/2 bg-ink-soft"
-      />
+    <section className="relative h-[100vh] w-full overflow-hidden bg-ink">
+      <TyvoHeroScene onSelect={handleSelect} />
 
-      <div className="relative z-10 flex flex-col items-center gap-8 px-6 text-center">
-        <div ref={logoRef} className="font-en text-6xl font-bold tracking-wideish text-accent md:text-8xl">
-          TYV
+      {unmappedNotice && (
+        <div
+          role="status"
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 rounded-sm border border-accent/40 bg-ink/90 px-4 py-2 text-center text-xs text-paper-dim"
+        >
+          &ldquo;{unmappedNotice}&rdquo; isn&apos;t connected to a section yet — config/content
+          update pending.
         </div>
-
-        <div ref={contentRef} className="flex flex-col items-center gap-4">
-          <p className="text-sm uppercase tracking-wideish text-paper-dim">{t('eyebrow')}</p>
-          <h1 className="max-w-2xl text-2xl font-bold leading-tight text-paper md:text-4xl">
-            {t('title')}
-          </h1>
-          <p className="max-w-md text-paper-dim">{t('subtitle')}</p>
-          <span className="mt-4 text-xs uppercase tracking-wideish text-accent">
-            {t('cta')}
-          </span>
-        </div>
-      </div>
+      )}
     </section>
   );
 }
