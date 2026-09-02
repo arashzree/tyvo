@@ -135,7 +135,11 @@ async function notifyAdmins({ booking, space, hasConflict }) {
   ]];
 
   const results = await Promise.allSettled(
-    admins.map((a) => sendMessage(a.chatId, text, { inlineKeyboard }))
+    admins.map((a) =>
+      a.role === 'approver'
+        ? sendMessage(a.chatId, text, { inlineKeyboard })
+        : sendMessage(a.chatId, text)
+    )
   );
 
   const rows = [];

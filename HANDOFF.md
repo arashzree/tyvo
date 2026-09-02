@@ -80,6 +80,30 @@ rather than guess" instruction)
    schema addition, but changes migration output — flagging explicitly
    rather than silently deviating from the literal §3 spec.
 
+## Admin roles (Telegram)
+
+`AdminWhitelist.role` is `owner` or `approver`:
+- **owner** — sees every new-booking notification (full text), but no
+  confirm/reject buttons. Can run `/addadmin`, `/removeadmin`, `/setrole`.
+  Cannot confirm/reject bookings (enforced both by omitting the buttons
+  and, defense in depth, by a role check in the callback handler).
+- **approver** (rental manager) — sees every new-booking notification WITH
+  confirm/reject buttons. Cannot manage the admin list.
+
+Commands and their access gates:
+- `/today`, `/upcoming` — any whitelisted admin.
+- `/whoami` — any whitelisted admin; replies with the caller's own label + role.
+- `/calendar` — any whitelisted admin; next 14 days, grouped by day, same
+  detail level for both roles (owners see everything, just can't act on it).
+- `/addadmin <chat_id> <name> <role>` — owner only.
+- `/removeadmin <chat_id>` — owner only.
+- `/setrole <chat_id> <role>` — owner only.
+
+**Safety invariant:** the system must never end up with zero owners.
+`/removeadmin` and `/setrole` both refuse if the target is the *only*
+remaining owner (removing or demoting them), so there's always at least
+one owner able to manage the admin list.
+
 ## Not yet done / needs real infrastructure to finish
 
 - Race-condition guard on the *create* path (two people submitting the

@@ -91,9 +91,15 @@ model BlockedSlot {
   @@map("blocked_slots")
 }
 
+enum AdminRole {
+  owner
+  approver
+}
+
 model AdminWhitelist {
-  chatId String @id @map("chat_id") // Telegram chat id
+  chatId String    @id @map("chat_id") // Telegram chat id
   label  String
+  role   AdminRole
 
   @@map("admin_whitelist")
 }

@@ -5,6 +5,8 @@ const { editMessageText, answerCallbackQuery } = require('../../lib/telegram');
 const { sendConfirmedSms, sendRejectedSms } = require('../../lib/kavenegar');
 const {
   formatJalaaliDateTime,
+  formatJalaaliDayHeader,
+  formatJalaaliTime,
   buildConfirmedEditText,
   buildRejectedEditText,
   buildAutoFlagText,
@@ -23,6 +25,7 @@ bot.use(async (ctx, next) => {
     return; // do not call next() — stop here for non-admins
   }
   ctx.adminLabel = admin.label || chatId;
+  ctx.adminRole = admin.role;
   return next();
 });
 
@@ -47,10 +50,158 @@ bot.command(['today', 'upcoming'], async (ctx) => {
   await ctx.reply(['📅 <b>رزروهای ۴۸ ساعت آینده</b>', '', ...lines].join('\n'), { parse_mode: 'HTML' });
 });
 
+/** Any admin (owner or approver) — just the whitelist gate above, no role restriction. */
+bot.command('whoami', async (ctx) => {
+  const roleLabel = ctx.adminRole === 'owner' ? 'مدیر (owner)' : 'مسئول رنتال (approver)';
+  await ctx.reply(`شما: ${escapeHtml(ctx.adminLabel)}\nنقش: ${roleLabel}`);
+});
+
+/** Any admin (owner or approver) — same access level as /whoami, lists the next 14 days grouped by day. */
+bot.command('calendar', async (ctx) => {
+  const now = new Date();
+  const in14d = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+  const bookings = await prisma.booking.findMany({
+    where: { status: { not: 'cancelled' }, startAt: { gte: now, lte: in14d } },
+    orderBy: { startAt: 'asc' },
+    include: { space: true },
+  });
+
+  if (bookings.length === 0) {
+    await ctx.reply('هیچ رزروی برای ۱۴ روز آینده ثبت نشده.');
+    return;
+  }
+
+  const statusLabels = {
+    pending: '⏳ در انتظار',
+    confirmed: '✅ تأییدشده',
+    rejected: '❌ ردشده',
+    completed: '☑️ انجام‌شده',
+  };
+
+  const groups = [];
+  let currentHeader = null;
+  let currentLines = null;
+  for (const b of bookings) {
+    const header = formatJalaaliDayHeader(b.startAt);
+    if (header !== currentHeader) {
+      currentHeader = header;
+      currentLines = [];
+      groups.push({ header, lines: currentLines });
+    }
+    currentLines.push(
+      `• ${escapeHtml(b.space.nameFa)} — ${formatJalaaliTime(b.startAt)} — ${escapeHtml(b.customerName)} (<code>${b.referenceCode}</code>) — ${statusLabels[b.status] || b.status}`
+    );
+  }
+
+  const sections = groups.map((g) => [`── ${g.header} ──`, ...g.lines].join('\n'));
+  await ctx.reply(
+    ['📅 <b>تقویم رزروها (۱۴ روز آینده)</b>', '', sections.join('\n\n')].join('\n'),
+    { parse_mode: 'HTML' }
+  );
+});
+
+/** owner only — add or update an admin's label/role. */
+bot.command('addadmin', async (ctx) => {
+  if (ctx.adminRole !== 'owner') {
+    await ctx.reply('این دستور فقط برای مدیران است.');
+    return;
+  }
+
+  const tokens = (ctx.match || '').trim().split(/\s+/).filter(Boolean);
+  if (tokens.length < 3) {
+    await ctx.reply('استفاده صحیح: /addadmin <chat_id> <name> <role>\nrole باید owner یا approver باشد.');
+    return;
+  }
+  const chatId = tokens[0];
+  const role = tokens[tokens.length - 1];
+  const name = tokens.slice(1, -1).join(' ');
+  if (role !== 'owner' && role !== 'approver') {
+    await ctx.reply('استفاده صحیح: /addadmin <chat_id> <name> <role>\nrole باید owner یا approver باشد.');
+    return;
+  }
+
+  await prisma.adminWhitelist.upsert({
+    where: { chatId },
+    update: { label: name, role },
+    create: { chatId, label: name, role },
+  });
+  await ctx.reply(`✅ ${escapeHtml(name)} با نقش ${role} اضافه شد.`);
+});
+
+/** owner only — remove an admin, refusing if it would remove the last remaining owner. */
+bot.command('removeadmin', async (ctx) => {
+  if (ctx.adminRole !== 'owner') {
+    await ctx.reply('این دستور فقط برای مدیران است.');
+    return;
+  }
+
+  const chatId = (ctx.match || '').trim().split(/\s+/).filter(Boolean)[0];
+  if (!chatId) {
+    await ctx.reply('استفاده صحیح: /removeadmin <chat_id>');
+    return;
+  }
+
+  const target = await prisma.adminWhitelist.findUnique({ where: { chatId } });
+  if (!target) {
+    await ctx.reply('این شناسه در لیست ادمین‌ها نیست.');
+    return;
+  }
+
+  if (target.role === 'owner') {
+    const ownerCount = await prisma.adminWhitelist.count({ where: { role: 'owner' } });
+    if (ownerCount <= 1) {
+      await ctx.reply('امکان حذف آخرین مدیر وجود ندارد.');
+      return;
+    }
+  }
+
+  await prisma.adminWhitelist.delete({ where: { chatId } });
+  await ctx.reply('✅ ادمین حذف شد.');
+});
+
+/** owner only — change an admin's role, with the same last-owner safety check as /removeadmin. */
+bot.command('setrole', async (ctx) => {
+  if (ctx.adminRole !== 'owner') {
+    await ctx.reply('این دستور فقط برای مدیران است.');
+    return;
+  }
+
+  const tokens = (ctx.match || '').trim().split(/\s+/).filter(Boolean);
+  const [chatId, role] = tokens;
+  if (!chatId || !role || (role !== 'owner' && role !== 'approver')) {
+    await ctx.reply('استفاده صحیح: /setrole <chat_id> <role>\nrole باید owner یا approver باشد.');
+    return;
+  }
+
+  const target = await prisma.adminWhitelist.findUnique({ where: { chatId } });
+  if (!target) {
+    await ctx.reply('این شناسه در لیست ادمین‌ها نیست.');
+    return;
+  }
+
+  if (target.role === 'owner' && role !== 'owner') {
+    const ownerCount = await prisma.adminWhitelist.count({ where: { role: 'owner' } });
+    if (ownerCount <= 1) {
+      await ctx.reply('امکان تغییر نقش آخرین مدیر به مسئول رنتال وجود ندارد.');
+      return;
+    }
+  }
+
+  await prisma.adminWhitelist.update({ where: { chatId }, data: { role } });
+  await ctx.reply('✅ نقش به‌روزرسانی شد.');
+});
+
 /** Confirm / reject inline button taps. callback_data format: "confirm:<bookingId>" or "reject:<bookingId>". */
 bot.on('callback_query:data', async (ctx) => {
   const [action, bookingId] = ctx.callbackQuery.data.split(':');
   if (action !== 'confirm' && action !== 'reject') return;
+
+  // Defense in depth: owners no longer receive these buttons (Step 3), but
+  // reject explicitly anyway rather than relying only on that.
+  if (ctx.adminRole !== 'approver') {
+    await ctx.answerCallbackQuery({ text: 'فقط مسئول رنتال می‌تواند این کار را انجام دهد.', show_alert: true });
+    return;
+  }
 
   const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { space: true } });
   if (!booking) {
