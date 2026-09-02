@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5, viewport-fit=cover">
+<meta name="theme-color" content="#B52524" id="themeColorMeta">
+<title>Tyvo Media — Cube Nav + Rental Spaces Prototype</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<script>
+  // Fix 0: verify Vazirmatn actually loaded (console-only check — no visual
+  // change per brief). Run this after K1 places the real woff2 at fonts/.
+  if (window.document && document.fonts && document.fonts.ready){
+    document.fonts.ready.then(() => {
+      const loaded = document.fonts.check('900 20px Vazirmatn');
+      console.log('[Tyvo font check] Vazirmatn ' + (loaded ? 'LOADED correctly.' : 'NOT LOADED — verify fonts/Vazirmatn[wght].woff2 exists at that path.'));
+    });
+  }
+</script>
+
+<div class="note">PROTOTYPE — no chip preview, tap RENTAL → glass menu → detail · v14</div>
+
+
+<div class="header">
+  <div class="back-wall"></div>
+  <div class="wall left"></div>
+  <div class="wall right"></div>
+  <div class="spotlight"></div>
+  <div class="floor"></div>
+
+  <div class="center" id="center">
+    <div class="cube-row" id="cubeRow">
+      <div class="logo-scene" id="logoScene">
+        <div class="cube" id="cube">
+          <div class="face front"></div>
+          <div class="face back"><div class="face-label">MEDIA</div></div>
+          <div class="face right"><div class="face-label">RENTAL</div></div>
+          <div class="face left"><div class="face-label">EVENTS</div></div>
+          <div class="face top"></div>
+          <div class="face bottom"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="caption">
+      <div class="title" id="capTitle">RENTAL</div>
+      <div class="sub" id="capSub">3 White Box studios + equipment rental</div>
+    </div>
+
+    <div class="dots" id="dots">
+      <span></span><span class="active"></span><span></span><span></span>
+    </div>
+
+    <div class="contact-panel glass-panel" id="contactPanel">
+      <div class="contact-row" id="contactPhoneRow">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.362 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        <span class="label" id="contactPhoneLabel">+98 914 263 8005</span>
+      </div>
+      <div class="contact-row" id="contactLocationRow">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span class="label">مشاهده لوکیشن</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="tap-hint" id="tapHint">TAP TO VIEW SPACES</div>
+
+  <div class="reflection" id="reflection" aria-hidden="true">
+    <div class="logo-scene">
+      <div class="cube" id="cubeReflect">
+        <div class="face front"></div>
+        <div class="face back"></div>
+        <div class="face right"></div>
+        <div class="face left"></div>
+        <div class="face top"></div>
+        <div class="face bottom"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="vignette"></div>
+  <div class="grain"></div>
+  <div class="dust"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <!-- ---------- DETAIL VIEW ---------- -->
+  <div class="detail-view" id="detailView">
+    <div class="glass-panel" id="roomMenu"></div>
+    <div class="glass-panel" id="roomDetail">
+      <div class="detail-back" id="detailBack">‹ Back to spaces</div>
+      <h3 id="rdTitle"></h3>
+      <p id="rdDesc"></p>
+      <div class="media-grid">
+        <div class="media-slot m1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.2"/><path d="M8 6l1.6-2.4h4.8L16 6"/></svg><span>Photo</span></div>
+        <div class="media-slot m2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3z" fill="currentColor" stroke="none"/></svg><span>Video</span></div>
+        <div class="media-slot m3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.2"/></svg><span>Photo</span></div>
+      </div>
+      <button class="reserve-btn" id="reserveBtn">Reserve this space ›</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================
+     BOOKING FLOW — Gate 02 continuation (white / glass, bilingual)
+     Steps: 1) Date & time  2) Your info  3) Review  4) Confirmation
+     ================================================================ -->
+<div id="bookingFlow" dir="rtl">
+  <div class="bf-wash"></div>
+
+  <div class="bf-topbar">
+    <div class="bf-back" id="bfBack">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      <span id="bfBackLabel">Back</span>
+    </div>
+    <div class="bf-lang">
+      <button id="langFa">FA</button><button id="langEn">EN</button>
+    </div>
+  </div>
+
+  <div class="bf-steps" id="bfSteps">
+    <div class="bf-step" data-step="1"><div class="dot">1</div><div class="label" data-i18n="stepDate"></div></div>
+    <div class="bf-line"></div>
+    <div class="bf-step" data-step="2"><div class="dot">2</div><div class="label" data-i18n="stepInfo"></div></div>
+    <div class="bf-line"></div>
+    <div class="bf-step" data-step="3"><div class="dot">3</div><div class="label" data-i18n="stepReview"></div></div>
+  </div>
+
+  <div class="bf-body">
+
+    <!-- STEP 1 — date & time -->
+    <div class="bf-screen" id="bfScreen1">
+      <div class="bf-eyebrow" data-i18n="stepDateEyebrow"></div>
+      <div class="bf-h1" id="bfRoomTitle">White Box A</div>
+      <div class="bf-sub" data-i18n="stepDateSub"></div>
+
+      <div class="bf-card">
+        <div class="cal-nav">
+          <button id="calPrev" aria-label="prev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+          <div class="cal-month" id="calMonthLabel"></div>
+          <button id="calNext" aria-label="next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
+        </div>
+        <div class="cal-weekdays" id="calWeekdays"></div>
+        <div class="cal-grid" id="calGrid"></div>
+      </div>
+
+      <div class="bf-label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+        <span data-i18n="labelTime"></span>
+      </div>
+      <div class="bf-card bf-times" id="bfTimes"></div>
+    </div>
+
+    <!-- STEP 2 — your info -->
+    <div class="bf-screen" id="bfScreen2">
+      <div class="bf-card bf-summary">
+        <div class="txt" id="bfSummary1"></div>
+        <div class="edit" data-goto="1" data-i18n="edit"></div>
+      </div>
+
+      <div class="bf-eyebrow" data-i18n="stepInfoEyebrow"></div>
+      <div class="bf-h1" data-i18n="stepInfoTitle"></div>
+      <div class="bf-sub" data-i18n="stepInfoSub"></div>
+
+      <div class="bf-field">
+        <label data-i18n="fieldName"></label>
+        <input type="text" id="fName" autocomplete="name">
+      </div>
+      <div class="bf-field">
+        <label data-i18n="fieldPhone"></label>
+        <input type="tel" id="fPhone" inputmode="numeric" autocomplete="tel" dir="ltr" style="text-align:inherit">
+        <div class="bf-hint bf-hint-error" id="fPhoneError" style="display:none;"></div>
+      </div>
+      <div class="bf-field bf-field-optional">
+        <label data-i18n="fieldEmail"></label>
+        <input type="email" id="fEmail" autocomplete="email" dir="ltr" style="text-align:inherit">
+        <div class="bf-hint" id="fEmailHint"></div>
+      </div>
+      <div class="bf-field">
+        <label data-i18n="fieldNotes"></label>
+        <textarea id="fNotes" maxlength="200"></textarea>
+        <div class="bf-hint bf-counter"><span id="fNotesCount">0</span>/200</div>
+      </div>
+    </div>
+
+    <!-- STEP 3 — review -->
+    <div class="bf-screen" id="bfScreen3">
+      <div class="bf-eyebrow" data-i18n="stepReviewEyebrow"></div>
+      <div class="bf-h1" data-i18n="stepReviewTitle"></div>
+      <div class="bf-sub" data-i18n="stepReviewSub"></div>
+
+      <div class="bf-card" style="padding:6px 16px;">
+        <div class="bf-review-row"><div class="k" data-i18n="revSpace"></div><div class="v" id="revSpace"></div></div>
+        <div class="bf-review-row"><div class="k" data-i18n="revDate"></div><div class="v" id="revDate"></div></div>
+        <div class="bf-review-row"><div class="k" data-i18n="revName"></div><div class="v" id="revName"></div></div>
+        <div class="bf-review-row"><div class="k" data-i18n="revPhone"></div><div class="v" id="revPhone" dir="ltr"></div></div>
+        <div class="bf-review-row"><div class="k" data-i18n="revEmail"></div><div class="v" id="revEmail" dir="ltr"></div></div>
+        <div class="bf-review-row"><div class="k" data-i18n="revNotes"></div><div class="v" id="revNotes"></div></div>
+      </div>
+    </div>
+
+    <!-- STEP 4 — confirmation -->
+    <div class="bf-screen" id="bfScreen4">
+      <div class="bf-confirm">
+        <div class="bf-check"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 7"/></svg></div>
+        <div class="bf-h1" data-i18n="confirmTitle"></div>
+        <div class="bf-sub" data-i18n="confirmSub" style="margin-bottom:0;"></div>
+        <div class="bf-ref" id="bfRef" dir="ltr"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="bf-footer" id="bfFooter">
+    <button class="bf-btn" id="bfNext"></button>
+  </div>
+</div>
+
+<script src="js/cube-nav.js"></script>
+<script src="js/booking-flow.js"></script>
+
+</body>
+</html>

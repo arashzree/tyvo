@@ -1,0 +1,99 @@
+// Tyvo Media — White Box Rental Booking
+// Data model per Backend Build Brief v1, §3.
+// DB: Postgres (Neon/Supabase, or self-hosted per brief §8 fallback note).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BookingStatus {
+  pending
+  confirmed
+  rejected
+  cancelled
+  completed
+}
+
+model Space {
+  id          String   @id @default(uuid())
+  name        String                     // e.g. "White Box A" (matches prototype `name`)
+  nameFa      String   @map("name_fa")   // e.g. "باکس سفید A" (matches prototype `nameFa`)
+  slug        String   @unique
+  featured    Boolean  @default(false)
+  tag         String?
+  description String
+  active      Boolean  @default(true)
+  sortOrder   Int      @map("sort_order")
+
+  bookings     Booking[]
+  blockedSlots BlockedSlot[]
+
+  @@map("spaces")
+}
+
+model Booking {
+  id              String    @id @default(uuid())
+  referenceCode   String    @unique @map("reference_code") // TYVO-XXXXXX
+  spaceId         String    @map("space_id")
+  space           Space     @relation(fields: [spaceId], references: [id])
+  startAt         DateTime  @map("start_at") // stored UTC/Gregorian
+  endAt           DateTime  @map("end_at")   // startAt + 1h (slot granularity)
+  customerName    String    @map("customer_name")
+  customerPhone   String    @map("customer_phone")
+  customerEmail   String?   @map("customer_email")
+  notes           String?
+  status          BookingStatus @default(pending)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  adminActionBy   String?   @map("admin_action_by") // telegram chat id or username
+  adminActionAt   DateTime? @map("admin_action_at")
+
+  // Telegram message tracking — one row per admin who received this
+  // booking's notification, so confirm/reject can edit EVERY admin's copy
+  // in place (brief §7 says all admin_whitelist chat_ids get notified;
+  // a single chat_id/message_id field can't track that, so this is a
+  // small addition beyond the brief's literal §3 schema — flagged in the
+  // handoff notes).
+  telegramMessages TelegramMessage[]
+
+  @@index([spaceId, startAt])
+  @@index([status])
+  @@map("bookings")
+}
+
+model TelegramMessage {
+  id        String  @id @default(uuid())
+  bookingId String  @map("booking_id")
+  booking   Booking @relation(fields: [bookingId], references: [id])
+  chatId    String  @map("chat_id")
+  messageId Int     @map("message_id")
+
+  @@unique([bookingId, chatId])
+  @@map("booking_telegram_messages")
+}
+
+model BlockedSlot {
+  id        String   @id @default(uuid())
+  spaceId   String   @map("space_id")
+  space     Space    @relation(fields: [spaceId], references: [id])
+  startAt   DateTime @map("start_at")
+  endAt     DateTime @map("end_at")
+  reason    String?
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([spaceId, startAt])
+  @@map("blocked_slots")
+}
+
+model AdminWhitelist {
+  chatId String @id @map("chat_id") // Telegram chat id
+  label  String
+
+  @@map("admin_whitelist")
+}

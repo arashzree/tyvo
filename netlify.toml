@@ -1,0 +1,28 @@
+[build]
+  functions = "netlify/functions"
+  publish = "public"
+
+[[redirects]]
+  from = "/api/spaces/:id/availability"
+  to = "/.netlify/functions/availability?id=:id"
+  status = 200
+
+[[redirects]]
+  from = "/api/spaces"
+  to = "/.netlify/functions/spaces"
+  status = 200
+
+[[redirects]]
+  from = "/api/bookings/:reference_code"
+  to = "/.netlify/functions/bookings?reference_code=:reference_code"
+  status = 200
+
+[[redirects]]
+  from = "/api/bookings"
+  to = "/.netlify/functions/bookings"
+  status = 200
+
+[[redirects]]
+  from = "/api/telegram/webhook"
+  to = "/.netlify/functions/telegram-webhook"
+  status = 200
