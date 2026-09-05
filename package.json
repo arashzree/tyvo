@@ -4,6 +4,7 @@
   "private": true,
   "description": "Tyvo Media — White Box Rental Booking backend (Netlify Functions + Prisma + Postgres + Telegram bot + Kavenegar SMS)",
   "scripts": {
+    "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "node prisma/seed.js",
