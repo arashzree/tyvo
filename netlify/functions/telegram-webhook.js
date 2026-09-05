@@ -306,6 +306,6 @@ function escapeHtml(s) {
   return String(s || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 }
 
-exports.handler = webhookCallback(bot, 'lambda', {
+exports.handler = webhookCallback(bot, 'aws-lambda-async', {
   secretToken: process.env.TELEGRAM_WEBHOOK_SECRET,
 });
