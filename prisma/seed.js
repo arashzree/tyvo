@@ -43,9 +43,9 @@ async function main() {
   // from the very first deploy — otherwise no one could ever run
   // /addadmin to bootstrap the rest of the team.
   await prisma.adminWhitelist.upsert({
-    where: { chatId: '<268537670>' },
+    where: { chatId: '268537670' },
     update: { role: 'owner', label: 'Atilla' },
-    create: { chatId: '<268537670>', label: 'Atilla', role: 'owner' },
+    create: { chatId: '268537670', label: 'Atilla', role: 'owner' },
   });
   console.log('Seeded first owner admin.');
 }
