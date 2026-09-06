@@ -29,6 +29,27 @@ bot.use(async (ctx, next) => {
   return next();
 });
 
+/** Entry point after the whitelist gate — greets the admin and lists commands available to their role. */
+bot.command('start', async (ctx) => {
+  const lines = [
+    `سلام ${escapeHtml(ctx.adminLabel)} 👋`,
+    '',
+    '/whoami — نمایش نام و نقش شما',
+    '/today — رزروهای تأییدشده ۴۸ ساعت آینده',
+    '/calendar — تقویم رزروها (۱۴ روز آینده)',
+  ];
+  if (ctx.adminRole === 'owner') {
+    lines.push(
+      '',
+      'دستورات مخصوص مدیر:',
+      '/addadmin <chat_id> <name> <role> — افزودن ادمین',
+      '/removeadmin <chat_id> — حذف ادمین',
+      '/setrole <chat_id> <role> — تغییر نقش ادمین'
+    );
+  }
+  await ctx.reply(lines.join('\n'));
+});
+
 /** §7 — /today (and /upcoming) lists confirmed bookings for the next 48h. */
 bot.command(['today', 'upcoming'], async (ctx) => {
   const now = new Date();

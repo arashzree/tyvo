@@ -44,6 +44,20 @@
      </div>`
   ).join('');
 
+  // Fetch real space ids from the backend so the booking flow can submit a
+  // real space_id (the static `rooms` array above only drives the cube UI
+  // and has no id of its own). Matched by English name, same set seeded by
+  // prisma/seed.js — see notes there.
+  fetch('/api/spaces')
+    .then(res => res.ok ? res.json() : Promise.reject(new Error('spaces fetch failed: ' + res.status)))
+    .then(spaces => {
+      rooms.forEach(r => {
+        const match = spaces.find(s => s.name === r.name);
+        if (match) r.id = match.id;
+      });
+    })
+    .catch(err => console.error('[cube-nav] failed to load space ids:', err));
+
   let rotation = 0; // LOGO panel is the default entry point
   let dragging = false;
   let startX = 0, startY = 0;

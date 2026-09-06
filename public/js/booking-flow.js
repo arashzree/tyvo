@@ -376,7 +376,7 @@
       });
       bfSteps.style.display = n <= 3 ? 'flex' : 'none';
       if (n === 2) updateSummary();
-      if (n === 3) updateReview();
+      if (n === 3){ updateReview(); bfSubmitError.style.display = 'none'; }
       updateNextButton();
       bfBody.scrollTop = 0;
       if (!window.__tyvoSuppressHistory){
@@ -432,12 +432,64 @@
       el.addEventListener('click', () => showStep(parseInt(el.dataset.goto, 10)));
     });
 
+    const bfSubmitError = document.getElementById('bfSubmitError');
+
+    function bookingErrorMessage(status, serverError){
+      if (status === 409) return bfLang === 'fa' ? 'این بازه دیگر در دسترس نیست. لطفاً زمان دیگری انتخاب کنید.' : 'This slot is no longer available. Please pick another time.';
+      if (status === 400) return bfLang === 'fa' ? 'اطلاعات وارد شده نامعتبر است. لطفاً بررسی کنید.' : 'Some of the submitted info is invalid. Please check and try again.';
+      return bfLang === 'fa' ? 'خطا در ارتباط با سرور. دوباره تلاش کنید.' : 'Something went wrong. Please try again.';
+    }
+
+    async function submitBooking(){
+      bfSubmitError.style.display = 'none';
+      if (!currentRoom || !currentRoom.id){
+        bfSubmitError.textContent = bfLang === 'fa' ? 'خطا در بارگذاری اطلاعات فضا. لطفاً صفحه را رفرش کنید.' : 'Failed to load space info. Please refresh the page.';
+        bfSubmitError.style.display = 'block';
+        return;
+      }
+
+      const [hh, mm] = selectedTime.split(':').map(Number);
+      const startDateTime = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), hh, mm);
+
+      const originalLabel = bfNext.textContent;
+      bfNext.disabled = true;
+      bfNext.textContent = bfLang === 'fa' ? 'در حال ثبت...' : 'Submitting...';
+
+      try {
+        const res = await fetch('/api/bookings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            space_id: currentRoom.id,
+            start_at: startDateTime.toISOString(),
+            customer_name: fName.value.trim(),
+            customer_phone: fPhone.value.trim(),
+            customer_email: fEmail.value.trim() || undefined,
+            notes: fNotes.value.trim() || undefined,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok){
+          bfSubmitError.textContent = bookingErrorMessage(res.status, data.error);
+          bfSubmitError.style.display = 'block';
+          return;
+        }
+        bfRef.textContent = data.reference_code;
+        showStep(4);
+      } catch (err) {
+        bfSubmitError.textContent = bookingErrorMessage(0);
+        bfSubmitError.style.display = 'block';
+      } finally {
+        bfNext.disabled = false;
+        bfNext.textContent = originalLabel;
+      }
+    }
+
     bfNext.addEventListener('click', () => {
       if (bfStep === 1) showStep(2);
       else if (bfStep === 2) showStep(3);
       else if (bfStep === 3){
-        bfRef.textContent = 'TYVO-' + Math.random().toString(36).slice(2, 8).toUpperCase();
-        showStep(4);
+        submitBooking();
       }
       else if (bfStep === 4){
         // "Done" finishes the flow — unwind the history stack back to the
