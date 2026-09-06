@@ -13,11 +13,6 @@
   status = 200
 
 [[redirects]]
-  from = "/api/bookings/:reference_code"
-  to = "/.netlify/functions/bookings?reference_code=:reference_code"
-  status = 200
-
-[[redirects]]
   from = "/api/bookings"
   to = "/.netlify/functions/bookings"
   status = 200
