@@ -166,11 +166,78 @@
     let viewJM = todayJalaali.jm;
     let selectedDate = null;
     let selectedTime = null;
-    const disabledTimes = new Set(['12:00', '17:00']);
     const timeSlots = ['10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00'];
     const MAX_MONTHS_AHEAD = 3;
 
     function sameDay(a, b){ return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+
+    /* ----------------------------------------------------------------
+       Real availability — backed by GET /api/availability?id=&month=
+       (Jalali month, "YYYY-MM"). Cached per space+month since the same
+       month is re-rendered on every calendar interaction. A day/slot with
+       no cached data yet is treated as open (optimistic) until its
+       month's fetch resolves, at which point renderCalendar/renderTimes
+       run again with real data.
+       ---------------------------------------------------------------- */
+    const availabilityCache = {}; // `${spaceId}:${jy}-${jm}` -> { [jalaaliDay]: { [time]: open } }
+    const pendingAvailabilityFetches = new Set();
+
+    function monthKey(jy, jm){ return `${jy}-${String(jm).padStart(2, '0')}`; }
+
+    function ensureMonthAvailability(jy, jm){
+      if (!currentRoom || !currentRoom.id) return;
+      const cacheKey = `${currentRoom.id}:${monthKey(jy, jm)}`;
+      if (availabilityCache[cacheKey] || pendingAvailabilityFetches.has(cacheKey)) return;
+      pendingAvailabilityFetches.add(cacheKey);
+
+      fetch(`/api/availability?id=${currentRoom.id}&month=${monthKey(jy, jm)}`)
+        .then(res => res.ok ? res.json() : Promise.reject(new Error('availability fetch failed: ' + res.status)))
+        .then(data => {
+          const dayMap = {};
+          (data.days || []).forEach(d => {
+            const slotMap = {};
+            d.slots.forEach(s => { slotMap[s.time] = s.open; });
+            dayMap[d.jalaaliDay] = slotMap;
+          });
+          availabilityCache[cacheKey] = dayMap;
+
+          // The just-selected slot may have turned out to be closed (e.g. it
+          // was picked before this month's data arrived) — drop it rather
+          // than let the user proceed to submit a booking that will 409.
+          if (selectedDate && selectedTime){
+            const j = toJalaali(selectedDate.getFullYear(), selectedDate.getMonth() + 1, selectedDate.getDate());
+            if (monthKey(j.jy, j.jm) === monthKey(jy, jm) && isSlotOpen(selectedDate, selectedTime) === false){
+              selectedTime = null;
+            }
+          }
+          renderCalendar();
+          renderTimes();
+          updateNextButton();
+        })
+        .catch(err => console.error('[booking-flow] availability fetch failed:', err))
+        .finally(() => pendingAvailabilityFetches.delete(cacheKey));
+    }
+
+    /** Returns true/false once loaded, or null if that month hasn't been fetched yet (treated as open). */
+    function getDaySlotMap(jy, jm, jd){
+      if (!currentRoom || !currentRoom.id) return null;
+      const monthData = availabilityCache[`${currentRoom.id}:${monthKey(jy, jm)}`];
+      return monthData ? (monthData[jd] || null) : null;
+    }
+
+    function isSlotOpen(date, time){
+      const j = toJalaali(date.getFullYear(), date.getMonth() + 1, date.getDate());
+      const slotMap = getDaySlotMap(j.jy, j.jm, j.jd);
+      if (!slotMap) return null; // unknown yet
+      return slotMap[time] !== false;
+    }
+
+    function isDayFullyBooked(date){
+      const j = toJalaali(date.getFullYear(), date.getMonth() + 1, date.getDate());
+      const slotMap = getDaySlotMap(j.jy, j.jm, j.jd);
+      if (!slotMap) return false; // unknown yet — don't block optimistically
+      return Object.keys(slotMap).length > 0 && Object.values(slotMap).every(open => !open);
+    }
 
     function formattedDateTime(t){
       if (!selectedDate || !selectedTime) return t.notSet;
@@ -209,6 +276,10 @@
       const nextJY = viewJM === 12 ? viewJY + 1 : viewJY;
       const nextJM = viewJM === 12 ? 1 : viewJM + 1;
 
+      ensureMonthAvailability(prevJY, prevJM);
+      ensureMonthAvailability(viewJY, viewJM);
+      ensureMonthAvailability(nextJY, nextJM);
+
       const totalCells = Math.ceil((startOffset + daysInMonth) / 7) * 7;
       for (let i = 0; i < totalCells; i++){
         const dayNum = i - startOffset + 1;
@@ -218,15 +289,18 @@
         else if (dayNum > daysInMonth){ jd = dayNum - daysInMonth; cellDate = dateFromJalaali(nextJY, nextJM, jd); muted = true; }
         else { jd = dayNum; cellDate = dateFromJalaali(viewJY, viewJM, jd); }
 
+        const full = !muted && cellDate >= today && isDayFullyBooked(cellDate);
+
         cell.className = 'cal-cell';
         if (muted) cell.classList.add('muted');
         if (cellDate < today) cell.classList.add('past');
+        if (full) cell.classList.add('full');
         if (sameDay(cellDate, today)) cell.classList.add('today');
         if (sameDay(cellDate, selectedDate)) cell.classList.add('sel');
 
         cell.innerHTML = `<span class="n">${toFaDigits(jd)}</span>`;
-        if (!muted && cellDate >= today){
-          cell.addEventListener('click', () => { selectedDate = cellDate; renderCalendar(); updateNextButton(); });
+        if (!muted && !full && cellDate >= today){
+          cell.addEventListener('click', () => { selectedDate = cellDate; selectedTime = null; renderCalendar(); renderTimes(); updateNextButton(); });
         }
         calGrid.appendChild(cell);
       }
@@ -258,15 +332,22 @@
         else if (dayNum > daysInMonth){ cellDate = new Date(viewYear, viewMonth + 1, dayNum - daysInMonth); muted = true; }
         else { cellDate = new Date(viewYear, viewMonth, dayNum); }
 
+        if (!muted && cellDate >= today){
+          const j = toJalaali(cellDate.getFullYear(), cellDate.getMonth() + 1, cellDate.getDate());
+          ensureMonthAvailability(j.jy, j.jm);
+        }
+        const full = !muted && cellDate >= today && isDayFullyBooked(cellDate);
+
         cell.className = 'cal-cell';
         if (muted) cell.classList.add('muted');
         if (cellDate < today) cell.classList.add('past');
+        if (full) cell.classList.add('full');
         if (sameDay(cellDate, today)) cell.classList.add('today');
         if (sameDay(cellDate, selectedDate)) cell.classList.add('sel');
 
         cell.innerHTML = `<span class="n">${cellDate.getDate()}</span>`;
-        if (!muted && cellDate >= today){
-          cell.addEventListener('click', () => { selectedDate = cellDate; renderCalendar(); updateNextButton(); });
+        if (!muted && !full && cellDate >= today){
+          cell.addEventListener('click', () => { selectedDate = cellDate; selectedTime = null; renderCalendar(); renderTimes(); updateNextButton(); });
         }
         calGrid.appendChild(cell);
       }
@@ -291,7 +372,9 @@
     function renderTimes(){
       bfTimes.innerHTML = '';
       timeSlots.forEach(tm => {
-        const disabled = disabledTimes.has(tm);
+        // isSlotOpen returns null (unknown, treated as open) until that
+        // date's month has loaded — see ensureMonthAvailability.
+        const disabled = selectedDate ? isSlotOpen(selectedDate, tm) === false : false;
         const div = document.createElement('div');
         div.className = 'bf-time' + (selectedTime === tm ? ' sel' : '') + (disabled ? ' disabled' : '');
         div.textContent = bfLang === 'fa' ? toFaDigits(tm) : tm;
@@ -400,6 +483,15 @@
       const themeMeta = document.getElementById('themeColorMeta');
       if (themeMeta) themeMeta.setAttribute('content', '#FFECD3');
     }
+
+    // cube-nav.js's /api/spaces fetch resolves after this script runs and
+    // fills in currentRoom.id asynchronously — if the flow is already open
+    // by the time that happens, re-trigger the availability fetch that
+    // earlier no-opped for lack of an id.
+    window.__tyvoOnSpacesLoaded = function(){
+      if (bookingFlow.classList.contains('open')) renderCalendar();
+    };
+
     function closeBookingFlow(){
       bookingFlow.classList.remove('open');
       const themeMeta = document.getElementById('themeColorMeta');

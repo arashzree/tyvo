@@ -55,6 +55,7 @@
         const match = spaces.find(s => s.name === r.name);
         if (match) r.id = match.id;
       });
+      if (typeof window.__tyvoOnSpacesLoaded === 'function') window.__tyvoOnSpacesLoaded();
     })
     .catch(err => console.error('[cube-nav] failed to load space ids:', err));
 

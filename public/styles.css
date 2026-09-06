@@ -307,6 +307,7 @@
   .cal-cell{ display:flex; align-items:center; justify-content:center; font-size:13.5px; font-weight:700; color: var(--charcoal); cursor:pointer; position:relative; }
   .cal-cell.muted{ color: rgba(43,42,41,0.28); pointer-events:none; }
   .cal-cell.past{ color: rgba(43,42,41,0.22); pointer-events:none; }
+  .cal-cell.full{ color: rgba(43,42,41,0.28); pointer-events:none; text-decoration: line-through; }
   .cal-cell .n{ width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:50%; transition: background 150ms ease, color 150ms ease; }
   .cal-cell.sel .n{ background: var(--red); color: var(--cream); }
   .cal-cell.today:not(.sel) .n{ box-shadow: inset 0 0 0 1.5px var(--red); color: var(--red); }
