@@ -34,17 +34,19 @@ bot.command('start', async (ctx) => {
   const lines = [
     `سلام ${escapeHtml(ctx.adminLabel)} 👋`,
     '',
-    '/whoami — نمایش نام و نقش شما',
-    '/today — رزروهای تأییدشده ۴۸ ساعت آینده',
-    '/calendar — تقویم رزروها (۱۴ روز آینده)',
+    'دستورات عمومی:',
+    '🔄 بازنشانی → /start',
+    '🪪 مشخصات من → /whoami',
+    '📅 رزروهای ۴۸ ساعت آینده → /today',
+    '🗓️ تقویم ۱۴ روزه → /calendar',
   ];
   if (ctx.adminRole === 'owner') {
     lines.push(
       '',
-      'دستورات مخصوص مدیر:',
-      '/addadmin <chat_id> <name> <role> — افزودن ادمین',
-      '/removeadmin <chat_id> — حذف ادمین',
-      '/setrole <chat_id> <role> — تغییر نقش ادمین'
+      'دستورات مدیریتی:',
+      '➕ افزودن ادمین → /addadmin',
+      '➖ حذف ادمین → /removeadmin',
+      '🔧 تغییر نقش → /setrole'
     );
   }
   await ctx.reply(lines.join('\n'));
@@ -121,32 +123,36 @@ bot.command('calendar', async (ctx) => {
   );
 });
 
-/** owner only — add or update an admin's label/role. */
+/** owner only — add an admin by chat_id alone (e.g. from @userinfobot). Label is auto-fetched from Telegram when possible; new admins default to 'approver' (use /setrole to promote to owner). */
 bot.command('addadmin', async (ctx) => {
   if (ctx.adminRole !== 'owner') {
     await ctx.reply('این دستور فقط برای مدیران است.');
     return;
   }
 
-  const tokens = (ctx.match || '').trim().split(/\s+/).filter(Boolean);
-  if (tokens.length < 3) {
-    await ctx.reply('استفاده صحیح: /addadmin <chat_id> <name> <role>\nrole باید owner یا approver باشد.');
-    return;
-  }
-  const chatId = tokens[0];
-  const role = tokens[tokens.length - 1];
-  const name = tokens.slice(1, -1).join(' ');
-  if (role !== 'owner' && role !== 'approver') {
-    await ctx.reply('استفاده صحیح: /addadmin <chat_id> <name> <role>\nrole باید owner یا approver باشد.');
+  const chatId = (ctx.match || '').trim().split(/\s+/).filter(Boolean)[0];
+  if (!chatId || !/^-?\d+$/.test(chatId)) {
+    await ctx.reply('استفاده صحیح: /addadmin <chat_id>\nمثال: /addadmin 268537670\n(شناسه عددی چت را می‌توانید از رباتی مثل @userinfobot بگیرید)');
     return;
   }
 
-  await prisma.adminWhitelist.upsert({
-    where: { chatId },
-    update: { label: name, role },
-    create: { chatId, label: name, role },
-  });
-  await ctx.reply(`✅ ${escapeHtml(name)} با نقش ${role} اضافه شد.`);
+  let label = chatId;
+  try {
+    const chat = await ctx.api.getChat(chatId);
+    label = [chat.first_name, chat.last_name].filter(Boolean).join(' ') || chat.username || chatId;
+  } catch {
+    // Target hasn't started a chat with the bot yet (or getChat otherwise failed) — fall back to the chat_id as the label.
+  }
+
+  const existing = await prisma.adminWhitelist.findUnique({ where: { chatId } });
+  if (existing) {
+    await prisma.adminWhitelist.update({ where: { chatId }, data: { label } });
+    await ctx.reply(`ℹ️ ${escapeHtml(label)} از قبل ادمین است (نقش: ${existing.role}). نام به‌روزرسانی شد.`);
+    return;
+  }
+
+  await prisma.adminWhitelist.create({ data: { chatId, label, role: 'approver' } });
+  await ctx.reply(`✅ ${escapeHtml(label)} به‌عنوان ادمین (مسئول رنتال) اضافه شد.`);
 });
 
 /** owner only — remove an admin, refusing if it would remove the last remaining owner. */
