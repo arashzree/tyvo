@@ -73,13 +73,13 @@ bot.command(['today', 'upcoming'], async (ctx) => {
   await ctx.reply(['📅 <b>رزروهای ۴۸ ساعت آینده</b>', '', ...lines].join('\n'), { parse_mode: 'HTML' });
 });
 
-/** Any admin (owner or approver) — just the whitelist gate above, no role restriction. */
+/** Any admin (owner or rental_manager) — just the whitelist gate above, no role restriction. */
 bot.command('whoami', async (ctx) => {
-  const roleLabel = ctx.adminRole === 'owner' ? 'مدیر (owner)' : 'مسئول رنتال (approver)';
+  const roleLabel = ctx.adminRole === 'owner' ? 'مدیر (owner)' : 'مسئول رنتال (rental_manager)';
   await ctx.reply(`شما: ${escapeHtml(ctx.adminLabel)}\nنقش: ${roleLabel}`);
 });
 
-/** Any admin (owner or approver) — same access level as /whoami, lists the next 14 days grouped by day. */
+/** Any admin (owner or rental_manager) — same access level as /whoami, lists the next 14 days grouped by day. */
 bot.command('calendar', async (ctx) => {
   const now = new Date();
   const in14d = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
@@ -123,7 +123,7 @@ bot.command('calendar', async (ctx) => {
   );
 });
 
-/** owner only — add an admin by chat_id alone (e.g. from @userinfobot). Label is auto-fetched from Telegram when possible; new admins default to 'approver' (use /setrole to promote to owner). */
+/** owner only — add an admin by chat_id alone (e.g. from @userinfobot). Label is auto-fetched from Telegram when possible; new admins default to 'rental_manager' (use /setrole to promote to owner). */
 bot.command('addadmin', async (ctx) => {
   if (ctx.adminRole !== 'owner') {
     await ctx.reply('این دستور فقط برای مدیران است.');
@@ -151,7 +151,7 @@ bot.command('addadmin', async (ctx) => {
     return;
   }
 
-  await prisma.adminWhitelist.create({ data: { chatId, label, role: 'approver' } });
+  await prisma.adminWhitelist.create({ data: { chatId, label, role: 'rental_manager' } });
   await ctx.reply(`✅ ${escapeHtml(label)} به‌عنوان ادمین (مسئول رنتال) اضافه شد.`);
 });
 
@@ -195,8 +195,8 @@ bot.command('setrole', async (ctx) => {
 
   const tokens = (ctx.match || '').trim().split(/\s+/).filter(Boolean);
   const [chatId, role] = tokens;
-  if (!chatId || !role || (role !== 'owner' && role !== 'approver')) {
-    await ctx.reply('استفاده صحیح: /setrole <chat_id> <role>\nrole باید owner یا approver باشد.');
+  if (!chatId || !role || (role !== 'owner' && role !== 'rental_manager')) {
+    await ctx.reply('استفاده صحیح: /setrole <chat_id> <role>\nrole باید owner یا rental_manager باشد.');
     return;
   }
 
@@ -225,7 +225,7 @@ bot.on('callback_query:data', async (ctx) => {
 
   // Defense in depth: owners no longer receive these buttons (Step 3), but
   // reject explicitly anyway rather than relying only on that.
-  if (ctx.adminRole !== 'approver') {
+  if (ctx.adminRole !== 'rental_manager') {
     await ctx.answerCallbackQuery({ text: 'فقط مسئول رنتال می‌تواند این کار را انجام دهد.', show_alert: true });
     return;
   }

@@ -136,7 +136,7 @@ async function notifyAdmins({ booking, space, hasConflict }) {
 
   const results = await Promise.allSettled(
     admins.map((a) =>
-      a.role === 'approver'
+      a.role === 'rental_manager'
         ? sendMessage(a.chatId, text, { inlineKeyboard })
         : sendMessage(a.chatId, text)
     )
