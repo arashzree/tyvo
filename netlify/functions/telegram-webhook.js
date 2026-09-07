@@ -2,7 +2,7 @@ const { Bot, webhookCallback } = require('grammy');
 const { PrismaClient } = require('@prisma/client');
 const { isSlotFree } = require('../../lib/availability');
 const { editMessageText, answerCallbackQuery } = require('../../lib/telegram');
-const { sendConfirmedSms, sendRejectedSms } = require('../../lib/kavenegar');
+const { sendConfirmedSms, sendRejectedSms } = require('../../lib/sms');
 const {
   formatJalaaliDateTime,
   formatJalaaliDayHeader,
@@ -283,7 +283,10 @@ async function handleConfirm(ctx, booking) {
     });
   } catch (err) {
     console.error('[telegram-webhook] SMS (confirmed) failed:', err);
-    await ctx.reply(`⚠️ رزرو تأیید شد ولی ارسال پیامک ناموفق بود (${updated.referenceCode}).`);
+    await ctx.reply(
+      `⚠️ رزرو تأیید شد ولی پیامک ارسال نشد. لطفاً با مشتری تماس بگیرید: <code>${escapeHtml(updated.customerPhone)}</code>\nکد رهگیری: <code>${updated.referenceCode}</code>`,
+      { parse_mode: 'HTML' }
+    );
   }
 
   // §5.5 — auto-flag (not auto-reject) any OTHER pending booking for the exact same slot.
@@ -320,6 +323,10 @@ async function handleReject(ctx, booking, { silent }) {
     await sendRejectedSms({ phone: updated.customerPhone, referenceCode: updated.referenceCode });
   } catch (err) {
     console.error('[telegram-webhook] SMS (rejected) failed:', err);
+    await ctx.reply(
+      `⚠️ رزرو رد شد ولی پیامک ارسال نشد. لطفاً در صورت نیاز با مشتری تماس بگیرید: <code>${escapeHtml(updated.customerPhone)}</code>\nکد رهگیری: <code>${updated.referenceCode}</code>`,
+      { parse_mode: 'HTML' }
+    );
   }
 }
 
