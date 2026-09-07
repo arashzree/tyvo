@@ -93,7 +93,9 @@ model BlockedSlot {
 
 enum AdminRole {
   owner
-  approver
+  approver // deprecated — being renamed to rental_manager (see docs/ROLE_GAP.md §5); kept only because Postgres can't drop an enum value without recreating the type
+  rental_manager
+  member
 }
 
 model AdminWhitelist {
