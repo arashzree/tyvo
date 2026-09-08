@@ -109,3 +109,25 @@ Requiring the role argument on `/addadmin` is deliberate: there is no safe defau
 
 ### Member self-booking — deferred
 Not in this phase. Members get read-only free-slot visibility in the bot only; booking still happens on the existing public website (already safe — `/api/availability` and `/api/bookings` carry no customer-identity leak by construction, per §2a). **Phase-2 candidate:** an in-bot booking flow for members, reusing the already-proven-safe availability/creation logic.
+
+---
+
+## 6. Group-membership-driven access (added mid-plan)
+
+Decision: replace manual `/addmember` as the *primary* onboarding path with automatic sync from one private Telegram group the bot is a member of. `/addmember`/`/addadmin` stay as numeric fallbacks, unchanged from step 6.
+
+**Does this change steps 7-10 (now 7-9, 11)?** No. `notifyAdmins` filtering (7), the `/today`/`/calendar` gate (8), the 3-way `/start` menu (9), and the member-facing free-slot command (renumbered 11) all key off `AdminWhitelist.role === 'member'` — they don't know or care whether that row came from `/addmember` or a group join.
+
+**What it does add:**
+- **Sequencing constraint:** must ship *after* steps 7-9, not before. Group joins are automatic and outside manual control; if the leak-closing steps aren't live yet, every real join immediately gets the full pre-fix exposure (booking notifications, `/today`, `/calendar`) that a deliberate `/addmember` call today would not yet have caused in practice.
+- **A whitelist-gate interaction:** the gate (`telegram-webhook.js:19-30`) runs before every handler and rejects any chat_id not already in `AdminWhitelist` — a `new_chat_members`/`left_chat_member` event's `ctx.chat.id` is the *group's* id, never a whitelisted individual, so the gate would silently swallow these events. Fix is structural, not a gate change: register the two new handlers *before* `bot.use(gate)` so they run first and don't call `next()` for a matching event. Any other message sent in the group still falls through to the gate exactly as today (satisfies decision §5/req. "all bot interaction stays in DMs" for free, no extra code needed for that part).
+- **A real edge case:** adding the bot to the group itself fires `new_chat_members` with the bot's own user object in the array. Must filter `is_bot` or the bot would whitelist itself.
+- **A real prerequisite:** `TYVO_GROUP_ID` requires the actual group chat_id (a negative number), obtained by adding the bot to the group and reading `ctx.chat.id` off a real event — not something fabricable ahead of time.
+
+### New step 10 — group-membership sync (inserted after 7-9, before the renumbered step 11)
+- **10a.** Register `bot.on('message:new_chat_members', ...)` and `bot.on('message:left_chat_member', ...)` before the whitelist gate; no-op for any `ctx.chat.id` other than `TYVO_GROUP_ID`.
+- **10b.** Join handler: for each non-bot user in the event, upsert by chat_id — create with `role: 'member'` if absent; if already present, refresh `label` only, role untouched (req. "first insert only sets role").
+- **10c.** Leave handler: delete the row only if its *current* role is `member` (req. "owner/rental_manager rows must not be auto-removed") — checked at leave time, not by provenance, so an owner/rental_manager who was promoted after joining via the group is still protected.
+- **10d.** Extract the label-building logic already written for `/addmember`'s `getChat` fallback into a shared pure function, reused here directly against the event's inline `User` object (no extra API call needed, unlike the DM-command path).
+
+Testing this inherently requires a real person joining/leaving the real group — there's no fabricable throwaway version of a Telegram group-membership event.
