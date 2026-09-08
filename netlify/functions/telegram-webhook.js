@@ -44,8 +44,9 @@ bot.command('start', async (ctx) => {
     lines.push(
       '',
       'دستورات مدیریتی:',
-      '➕ افزودن ادمین → /addadmin',
-      '➖ حذف ادمین → /removeadmin',
+      '➕ افزودن ادمین (owner/rental_manager) → /addadmin',
+      '👤 افزودن عضو → /addmember',
+      '➖ حذف → /removeadmin',
       '🔧 تغییر نقش → /setrole'
     );
   }
@@ -128,8 +129,47 @@ bot.command('calendar', async (ctx) => {
   );
 });
 
-/** owner only — add an admin by chat_id alone (e.g. from @userinfobot). Label is auto-fetched from Telegram when possible; new admins default to 'rental_manager' (use /setrole to promote to owner). */
+/** Shared by /addadmin and /addmember — resolves a chat_id to a display label via Telegram's getChat, falling back to the bare chat_id if the target hasn't started a chat with the bot yet (or getChat otherwise fails). */
+async function resolveChatLabel(ctx, chatId) {
+  try {
+    const chat = await ctx.api.getChat(chatId);
+    return [chat.first_name, chat.last_name].filter(Boolean).join(' ') || chat.username || chatId;
+  } catch {
+    return chatId;
+  }
+}
+
+/** owner only — add an owner or rental_manager by chat_id (e.g. from @userinfobot). role is required: there is no safe default between two high-privilege roles. Use /addmember for regular staff. */
 bot.command('addadmin', async (ctx) => {
+  if (ctx.adminRole !== 'owner') {
+    await ctx.reply('این دستور فقط برای مدیران است.');
+    return;
+  }
+
+  const tokens = (ctx.match || '').trim().split(/\s+/).filter(Boolean);
+  const [chatId, role] = tokens;
+  if (!chatId || !/^-?\d+$/.test(chatId) || !role || (role !== 'owner' && role !== 'rental_manager')) {
+    await ctx.reply(
+      'استفاده صحیح: /addadmin <chat_id> <role>\nrole باید owner یا rental_manager باشد.\nبرای افزودن عضو عادی از /addmember استفاده کنید.\nمثال: /addadmin 268537670 owner'
+    );
+    return;
+  }
+
+  const label = await resolveChatLabel(ctx, chatId);
+
+  const existing = await prisma.adminWhitelist.findUnique({ where: { chatId } });
+  if (existing) {
+    await prisma.adminWhitelist.update({ where: { chatId }, data: { label } });
+    await ctx.reply(`ℹ️ ${escapeHtml(label)} از قبل در لیست است (نقش: ${existing.role}). برای تغییر نقش از /setrole استفاده کنید. نام به‌روزرسانی شد.`);
+    return;
+  }
+
+  await prisma.adminWhitelist.create({ data: { chatId, label, role } });
+  await ctx.reply(`✅ ${escapeHtml(label)} با نقش ${role} اضافه شد.`);
+});
+
+/** owner only — add a regular staff member by chat_id alone. Always role='member'; no role argument, since member is the only safe default (see /addadmin for owner/rental_manager). */
+bot.command('addmember', async (ctx) => {
   if (ctx.adminRole !== 'owner') {
     await ctx.reply('این دستور فقط برای مدیران است.');
     return;
@@ -137,27 +177,21 @@ bot.command('addadmin', async (ctx) => {
 
   const chatId = (ctx.match || '').trim().split(/\s+/).filter(Boolean)[0];
   if (!chatId || !/^-?\d+$/.test(chatId)) {
-    await ctx.reply('استفاده صحیح: /addadmin <chat_id>\nمثال: /addadmin 268537670\n(شناسه عددی چت را می‌توانید از رباتی مثل @userinfobot بگیرید)');
+    await ctx.reply('استفاده صحیح: /addmember <chat_id>\nمثال: /addmember 268537670\n(شناسه عددی چت را می‌توانید از رباتی مثل @userinfobot بگیرید)');
     return;
   }
 
-  let label = chatId;
-  try {
-    const chat = await ctx.api.getChat(chatId);
-    label = [chat.first_name, chat.last_name].filter(Boolean).join(' ') || chat.username || chatId;
-  } catch {
-    // Target hasn't started a chat with the bot yet (or getChat otherwise failed) — fall back to the chat_id as the label.
-  }
+  const label = await resolveChatLabel(ctx, chatId);
 
   const existing = await prisma.adminWhitelist.findUnique({ where: { chatId } });
   if (existing) {
     await prisma.adminWhitelist.update({ where: { chatId }, data: { label } });
-    await ctx.reply(`ℹ️ ${escapeHtml(label)} از قبل ادمین است (نقش: ${existing.role}). نام به‌روزرسانی شد.`);
+    await ctx.reply(`ℹ️ ${escapeHtml(label)} از قبل در لیست است (نقش: ${existing.role}). برای تغییر نقش از /setrole استفاده کنید. نام به‌روزرسانی شد.`);
     return;
   }
 
-  await prisma.adminWhitelist.create({ data: { chatId, label, role: 'rental_manager' } });
-  await ctx.reply(`✅ ${escapeHtml(label)} به‌عنوان ادمین (مسئول رنتال) اضافه شد.`);
+  await prisma.adminWhitelist.create({ data: { chatId, label, role: 'member' } });
+  await ctx.reply(`✅ ${escapeHtml(label)} به‌عنوان عضو اضافه شد.`);
 });
 
 /** owner only — remove an admin, refusing if it would remove the last remaining owner or the last remaining rental_manager. */
@@ -208,8 +242,8 @@ bot.command('setrole', async (ctx) => {
 
   const tokens = (ctx.match || '').trim().split(/\s+/).filter(Boolean);
   const [chatId, role] = tokens;
-  if (!chatId || !role || (role !== 'owner' && role !== 'rental_manager')) {
-    await ctx.reply('استفاده صحیح: /setrole <chat_id> <role>\nrole باید owner یا rental_manager باشد.');
+  if (!chatId || !role || (role !== 'owner' && role !== 'rental_manager' && role !== 'member')) {
+    await ctx.reply('استفاده صحیح: /setrole <chat_id> <role>\nrole باید owner یا rental_manager یا member باشد.');
     return;
   }
 
