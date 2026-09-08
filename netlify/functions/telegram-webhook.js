@@ -73,9 +73,14 @@ bot.command(['today', 'upcoming'], async (ctx) => {
   await ctx.reply(['📅 <b>رزروهای ۴۸ ساعت آینده</b>', '', ...lines].join('\n'), { parse_mode: 'HTML' });
 });
 
-/** Any admin (owner or rental_manager) — just the whitelist gate above, no role restriction. */
+/** Any whitelisted role — just the whitelist gate above, no role restriction. */
 bot.command('whoami', async (ctx) => {
-  const roleLabel = ctx.adminRole === 'owner' ? 'مدیر (owner)' : 'مسئول رنتال (rental_manager)';
+  const roleLabels = {
+    owner: 'مدیر (owner)',
+    rental_manager: 'مسئول رنتال (rental_manager)',
+    member: 'عضو (member)',
+  };
+  const roleLabel = roleLabels[ctx.adminRole] || ctx.adminRole;
   await ctx.reply(`شما: ${escapeHtml(ctx.adminLabel)}\nنقش: ${roleLabel}`);
 });
 
