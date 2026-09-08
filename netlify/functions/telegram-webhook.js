@@ -160,7 +160,7 @@ bot.command('addadmin', async (ctx) => {
   await ctx.reply(`✅ ${escapeHtml(label)} به‌عنوان ادمین (مسئول رنتال) اضافه شد.`);
 });
 
-/** owner only — remove an admin, refusing if it would remove the last remaining owner. */
+/** owner only — remove an admin, refusing if it would remove the last remaining owner or the last remaining rental_manager. */
 bot.command('removeadmin', async (ctx) => {
   if (ctx.adminRole !== 'owner') {
     await ctx.reply('این دستور فقط برای مدیران است.');
@@ -187,11 +187,19 @@ bot.command('removeadmin', async (ctx) => {
     }
   }
 
+  if (target.role === 'rental_manager') {
+    const managerCount = await prisma.adminWhitelist.count({ where: { role: 'rental_manager' } });
+    if (managerCount <= 1) {
+      await ctx.reply('امکان حذف آخرین مسئول رنتال وجود ندارد.');
+      return;
+    }
+  }
+
   await prisma.adminWhitelist.delete({ where: { chatId } });
   await ctx.reply('✅ ادمین حذف شد.');
 });
 
-/** owner only — change an admin's role, with the same last-owner safety check as /removeadmin. */
+/** owner only — change an admin's role, with the same last-owner/last-rental_manager safety checks as /removeadmin. */
 bot.command('setrole', async (ctx) => {
   if (ctx.adminRole !== 'owner') {
     await ctx.reply('این دستور فقط برای مدیران است.');
@@ -215,6 +223,14 @@ bot.command('setrole', async (ctx) => {
     const ownerCount = await prisma.adminWhitelist.count({ where: { role: 'owner' } });
     if (ownerCount <= 1) {
       await ctx.reply('امکان تغییر نقش آخرین مدیر به مسئول رنتال وجود ندارد.');
+      return;
+    }
+  }
+
+  if (target.role === 'rental_manager' && role !== 'rental_manager') {
+    const managerCount = await prisma.adminWhitelist.count({ where: { role: 'rental_manager' } });
+    if (managerCount <= 1) {
+      await ctx.reply('امکان تغییر نقش آخرین مسئول رنتال وجود ندارد.');
       return;
     }
   }
