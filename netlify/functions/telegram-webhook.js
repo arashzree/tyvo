@@ -53,8 +53,13 @@ bot.command('start', async (ctx) => {
   await ctx.reply(lines.join('\n'));
 });
 
-/** §7 — /today (and /upcoming) lists confirmed bookings for the next 48h. */
+/** §7 — /today (and /upcoming) lists confirmed bookings for the next 48h. owner/rental_manager only — leaks customer names/phones, member must never see this. */
 bot.command(['today', 'upcoming'], async (ctx) => {
+  if (ctx.adminRole === 'member') {
+    await ctx.reply('این دستور برای اعضا در دسترس نیست.');
+    return;
+  }
+
   const now = new Date();
   const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
   const bookings = await prisma.booking.findMany({
@@ -85,8 +90,13 @@ bot.command('whoami', async (ctx) => {
   await ctx.reply(`شما: ${escapeHtml(ctx.adminLabel)}\nنقش: ${roleLabel}`);
 });
 
-/** Any admin (owner or rental_manager) — same access level as /whoami, lists the next 14 days grouped by day. */
+/** owner/rental_manager only — lists the next 14 days grouped by day. Leaks customer names and internal status, member must never see this. */
 bot.command('calendar', async (ctx) => {
+  if (ctx.adminRole === 'member') {
+    await ctx.reply('این دستور برای اعضا در دسترس نیست.');
+    return;
+  }
+
   const now = new Date();
   const in14d = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
   const bookings = await prisma.booking.findMany({
