@@ -37,9 +37,15 @@ bot.command('start', async (ctx) => {
     'دستورات عمومی:',
     '🔄 بازنشانی → /start',
     '🪪 مشخصات من → /whoami',
-    '📅 رزروهای ۴۸ ساعت آینده → /today',
-    '🗓️ تقویم ۱۴ روزه → /calendar',
   ];
+
+  if (ctx.adminRole !== 'member') {
+    lines.push(
+      '📅 رزروهای ۴۸ ساعت آینده → /today',
+      '🗓️ تقویم ۱۴ روزه → /calendar'
+    );
+  }
+
   if (ctx.adminRole === 'owner') {
     lines.push(
       '',
