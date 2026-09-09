@@ -16,31 +16,6 @@ const {
 const prisma = new PrismaClient();
 const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN);
 
-/**
- * TEMPORARY — owner-only, replies with the current chat's id. Used once to
- * capture the group's chat_id for TYVO_GROUP_ID (see docs/ROLE_GAP.md step
- * 10); remove after that.
- *
- * Registered before the whitelist gate so it also works inside the group:
- * the gate keys off ctx.chat.id, which is the GROUP's id there (never an
- * individually-whitelisted chat_id), so it would otherwise reject this
- * before it ran. Checking ctx.from.id (the sender, not the chat) is what
- * makes the owner check work in both DMs and groups.
- *
- * Uses bot.on('message', ...) with a plain text-prefix check instead of
- * bot.command() — command-entity matching didn't fire inside the group in
- * testing (likely a bot-username-suffix/init-timing quirk specific to
- * grammy's command parsing in a serverless webhook context), so this
- * avoids that matching path entirely rather than chasing the exact cause
- * for a command that's getting deleted shortly anyway.
- */
-bot.on('message', async (ctx, next) => {
-  if (!(ctx.message.text || '').startsWith('/chatid')) return next();
-  const sender = await prisma.adminWhitelist.findUnique({ where: { chatId: String(ctx.from && ctx.from.id) } });
-  if (!sender || sender.role !== 'owner') return next();
-  await ctx.reply(`<code>${ctx.chat.id}</code>`, { parse_mode: 'HTML' });
-});
-
 /** Whitelist gate — applies to every update. Non-whitelisted users get a generic reply, no booking data leaked (brief §7). */
 bot.use(async (ctx, next) => {
   const chatId = String(ctx.chat && ctx.chat.id);
