@@ -125,9 +125,9 @@ async function handleLookup(event) {
   }
 }
 
-/** Sends the new-booking notification to every whitelisted admin and records each message for later in-place edits. */
+/** Sends the new-booking notification to every owner/rental_manager admin and records each message for later in-place edits. Members never receive this — they get no automatic booking notifications at all (see docs/ROLE_GAP.md). */
 async function notifyAdmins({ booking, space, hasConflict }) {
-  const admins = await prisma.adminWhitelist.findMany();
+  const admins = await prisma.adminWhitelist.findMany({ where: { role: { in: ['owner', 'rental_manager'] } } });
   const text = buildNewBookingMessage({ booking, space, hasConflict });
   const inlineKeyboard = [[
     { text: '✅ تأیید', callback_data: `confirm:${booking.id}` },
