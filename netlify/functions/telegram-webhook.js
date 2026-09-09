@@ -1,12 +1,13 @@
 const { Bot, webhookCallback } = require('grammy');
 const { PrismaClient } = require('@prisma/client');
-const { isSlotFree } = require('../../lib/availability');
+const { isSlotFree, computeRangeAvailability } = require('../../lib/availability');
 const { editMessageText, answerCallbackQuery } = require('../../lib/telegram');
 const { sendConfirmedSms, sendRejectedSms } = require('../../lib/sms');
 const {
   formatJalaaliDateTime,
   formatJalaaliDayHeader,
   formatJalaaliTime,
+  toFaDigits,
   buildConfirmedEditText,
   buildRejectedEditText,
   buildAutoFlagText,
@@ -37,6 +38,7 @@ bot.command('start', async (ctx) => {
     'دستورات عمومی:',
     '🔄 بازنشانی → /start',
     '🪪 مشخصات من → /whoami',
+    '🟢 اسلات‌های آزاد یک فضا → /available',
   ];
 
   if (ctx.adminRole !== 'member') {
@@ -141,6 +143,64 @@ bot.command('calendar', async (ctx) => {
   const sections = groups.map((g) => [`── ${g.header} ──`, ...g.lines].join('\n'));
   await ctx.reply(
     ['📅 <b>تقویم رزروها (۱۴ روز آینده)</b>', '', sections.join('\n\n')].join('\n'),
+    { parse_mode: 'HTML' }
+  );
+});
+
+const AVAILABLE_WINDOW_DAYS = 14; // matches /calendar's window
+
+/** Any role, including member — shows which slots are OPEN for one space over the next 14 days. Never shows who booked, their contact info, or a reference code, not even a count — open/closed per slot only, per docs/ROLE_GAP.md's member permissions. */
+bot.command('available', async (ctx) => {
+  const spaces = await prisma.space.findMany({ where: { active: true }, orderBy: { sortOrder: 'asc' } });
+
+  const query = (ctx.match || '').trim().toLowerCase();
+  const matches = query
+    ? spaces.filter(
+        (s) => s.slug.toLowerCase().includes(query) || s.name.toLowerCase().includes(query) || s.nameFa.includes(query)
+      )
+    : [];
+
+  if (matches.length !== 1) {
+    const list = spaces.map((s) => `• ${escapeHtml(s.nameFa)} → <code>${s.slug}</code>`).join('\n');
+    await ctx.reply(
+      ['استفاده صحیح: /available <space>', 'یکی از این‌ها را وارد کنید:', '', list].join('\n'),
+      { parse_mode: 'HTML' }
+    );
+    return;
+  }
+  const space = matches[0];
+
+  const now = new Date();
+  const rangeEnd = new Date(now.getTime() + AVAILABLE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+  const [confirmedBookings, blockedSlots] = await Promise.all([
+    prisma.booking.findMany({
+      where: { spaceId: space.id, status: 'confirmed', startAt: { lt: rangeEnd }, endAt: { gt: now } },
+      select: { startAt: true, endAt: true },
+    }),
+    prisma.blockedSlot.findMany({
+      where: { spaceId: space.id, startAt: { lt: rangeEnd }, endAt: { gt: now } },
+      select: { startAt: true, endAt: true },
+    }),
+  ]);
+
+  const days = computeRangeAvailability({ days: AVAILABLE_WINDOW_DAYS, confirmedBookings, blockedSlots, now });
+
+  const sections = days
+    .map((d) => {
+      const openTimes = d.slots.filter((s) => s.open).map((s) => toFaDigits(s.time));
+      if (openTimes.length === 0) return null;
+      return [`── ${formatJalaaliDayHeader(d.date)} ──`, openTimes.join('، ')].join('\n');
+    })
+    .filter(Boolean);
+
+  if (sections.length === 0) {
+    await ctx.reply(`🔴 هیچ اسلات آزادی برای <b>${escapeHtml(space.nameFa)}</b> در ۱۴ روز آینده نیست.`, { parse_mode: 'HTML' });
+    return;
+  }
+
+  await ctx.reply(
+    [`🟢 <b>اسلات‌های آزاد — ${escapeHtml(space.nameFa)}</b> (۱۴ روز آینده)`, '', sections.join('\n\n')].join('\n'),
     { parse_mode: 'HTML' }
   );
 });
