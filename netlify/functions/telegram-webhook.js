@@ -16,9 +16,70 @@ const {
 const prisma = new PrismaClient();
 const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN);
 
-/** Whitelist gate — applies to every update. Non-whitelisted users get a generic reply, no booking data leaked (brief §7). */
+/** Shared by resolveChatLabel and the group-membership sync handlers below — builds a display label from a Telegram User (or ChatFullInfo, same shape for private chats) object. */
+function labelFromTelegramUser(user) {
+  return [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username || String(user.id);
+}
+
+/**
+ * Group-membership sync (docs/ROLE_GAP.md step 10) — TYVO_GROUP_ID is the
+ * one private group whose membership drives 'member' access. Registered
+ * before the whitelist gate: the gate keys off ctx.chat.id, which is the
+ * GROUP's id here, never an individually-whitelisted chat_id, so it would
+ * otherwise reject these before they ran.
+ */
+
+/** 10a/10b — new member(s) joined the group: upsert by chat_id, role='member' on first insert only, label refreshed on repeat. */
+bot.on('message:new_chat_members', async (ctx, next) => {
+  if (String(ctx.chat.id) !== process.env.TYVO_GROUP_ID) {
+    console.warn(`[telegram-webhook] new_chat_members from unrecognized chat ${ctx.chat.id} (expected TYVO_GROUP_ID=${process.env.TYVO_GROUP_ID})`);
+    return next();
+  }
+
+  for (const user of ctx.message.new_chat_members) {
+    if (user.is_bot) continue; // covers the bot's own add-to-group event too
+    const chatId = String(user.id);
+    const label = labelFromTelegramUser(user);
+    const existing = await prisma.adminWhitelist.findUnique({ where: { chatId } });
+    if (existing) {
+      await prisma.adminWhitelist.update({ where: { chatId }, data: { label } }); // never touch role on repeat
+    } else {
+      await prisma.adminWhitelist.create({ data: { chatId, label, role: 'member' } });
+    }
+  }
+});
+
+/** 10c — a member left the group: remove only if their CURRENT role is still 'member' — owner/rental_manager rows are never auto-removed, even if they happen to be in the group and leave. */
+bot.on('message:left_chat_member', async (ctx, next) => {
+  if (String(ctx.chat.id) !== process.env.TYVO_GROUP_ID) {
+    console.warn(`[telegram-webhook] left_chat_member from unrecognized chat ${ctx.chat.id} (expected TYVO_GROUP_ID=${process.env.TYVO_GROUP_ID})`);
+    return next();
+  }
+
+  const user = ctx.message.left_chat_member;
+  if (user.is_bot) return;
+  const chatId = String(user.id);
+  const existing = await prisma.adminWhitelist.findUnique({ where: { chatId } });
+  if (existing && existing.role === 'member') {
+    await prisma.adminWhitelist.delete({ where: { chatId } });
+  }
+});
+
+/** 10f — the tracked group migrated to a supergroup (new chat_id). TYVO_GROUP_ID is a static env var the running function can't update itself, so DM every owner the new id directly rather than silently breaking sync. */
+bot.on('message:migrate_to_chat_id', async (ctx, next) => {
+  if (String(ctx.chat.id) !== process.env.TYVO_GROUP_ID) return next();
+
+  const newChatId = ctx.message.migrate_to_chat_id;
+  const owners = await prisma.adminWhitelist.findMany({ where: { role: 'owner' } });
+  const text = `⚠️ گروه به سوپرگروه تبدیل شد و شناسه چت تغییر کرد.\n\nTYVO_GROUP_ID را در Netlify به این مقدار به‌روزرسانی کنید:\n<code>${newChatId}</code>`;
+  await Promise.allSettled(owners.map((o) => ctx.api.sendMessage(o.chatId, text, { parse_mode: 'HTML' })));
+});
+
+/** Whitelist gate — applies to every update. Non-whitelisted users get a generic reply, no booking data leaked (brief §7). 10e — TYVO_GROUP_ID is a membership source only, never gets a reply (join/leave/migrate are already handled above and never reach here; this covers any other message type sent in the group). */
 bot.use(async (ctx, next) => {
   const chatId = String(ctx.chat && ctx.chat.id);
+  if (chatId === process.env.TYVO_GROUP_ID) return;
+
   const admin = await prisma.adminWhitelist.findUnique({ where: { chatId } });
   if (!admin) {
     if (ctx.message) await ctx.reply('این بات خصوصی است.');
@@ -209,7 +270,7 @@ bot.command('available', async (ctx) => {
 async function resolveChatLabel(ctx, chatId) {
   try {
     const chat = await ctx.api.getChat(chatId);
-    return [chat.first_name, chat.last_name].filter(Boolean).join(' ') || chat.username || chatId;
+    return labelFromTelegramUser(chat);
   } catch {
     return chatId;
   }
