@@ -26,8 +26,16 @@ const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN);
  * individually-whitelisted chat_id), so it would otherwise reject this
  * before it ran. Checking ctx.from.id (the sender, not the chat) is what
  * makes the owner check work in both DMs and groups.
+ *
+ * Uses bot.on('message', ...) with a plain text-prefix check instead of
+ * bot.command() — command-entity matching didn't fire inside the group in
+ * testing (likely a bot-username-suffix/init-timing quirk specific to
+ * grammy's command parsing in a serverless webhook context), so this
+ * avoids that matching path entirely rather than chasing the exact cause
+ * for a command that's getting deleted shortly anyway.
  */
-bot.command('chatid', async (ctx, next) => {
+bot.on('message', async (ctx, next) => {
+  if (!(ctx.message.text || '').startsWith('/chatid')) return next();
   const sender = await prisma.adminWhitelist.findUnique({ where: { chatId: String(ctx.from && ctx.from.id) } });
   if (!sender || sender.role !== 'owner') return next();
   await ctx.reply(`<code>${ctx.chat.id}</code>`, { parse_mode: 'HTML' });
