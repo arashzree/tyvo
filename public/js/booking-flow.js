@@ -529,6 +529,7 @@
     function bookingErrorMessage(status, serverError){
       if (status === 409) return bfLang === 'fa' ? 'این بازه دیگر در دسترس نیست. لطفاً زمان دیگری انتخاب کنید.' : 'This slot is no longer available. Please pick another time.';
       if (status === 400) return bfLang === 'fa' ? 'اطلاعات وارد شده نامعتبر است. لطفاً بررسی کنید.' : 'Some of the submitted info is invalid. Please check and try again.';
+      if (status === 429) return bfLang === 'fa' ? 'درخواست‌های زیادی ثبت شده. چند دقیقه دیگر دوباره تلاش کنید.' : 'Too many requests. Please wait a few minutes and try again.';
       return bfLang === 'fa' ? 'خطا در ارتباط با سرور. دوباره تلاش کنید.' : 'Something went wrong. Please try again.';
     }
 

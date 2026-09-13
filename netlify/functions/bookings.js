@@ -4,6 +4,7 @@ const { isSlotFree } = require('../../lib/availability');
 const { generateUniqueReferenceCode } = require('../../lib/referenceCode');
 const { sendMessage } = require('../../lib/telegram');
 const { buildNewBookingMessage } = require('../../lib/notifications');
+const { isIpRateLimited, isPhoneRateLimited } = require('../../lib/rateLimit');
 
 const prisma = new PrismaClient();
 const SLOT_DURATION_MS = 60 * 60 * 1000; // 1 hour, matches prototype's slot granularity
@@ -15,6 +16,12 @@ exports.handler = async (event) => {
 };
 
 async function handleCreate(event) {
+  // Cheapest possible check first (docs/AUDIT.md finding #6) — no DB
+  // round-trip, blocks a flood before it even reaches JSON parsing.
+  if (isIpRateLimited(event)) {
+    return { statusCode: 429, body: JSON.stringify({ error: 'Too many requests. Please try again later.' }) };
+  }
+
   let body;
   try {
     body = JSON.parse(event.body || '{}');
@@ -31,6 +38,11 @@ async function handleCreate(event) {
   const phone = normalizeDigits(customer_phone).trim();
   if (!isValidIranPhone(phone)) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Invalid Iranian mobile number' }) };
+  }
+  // DB-backed, so it survives cold starts / multiple containers unlike the
+  // IP check above — catches the same phone spread across many IPs.
+  if (await isPhoneRateLimited(prisma, phone)) {
+    return { statusCode: 429, body: JSON.stringify({ error: 'Too many booking requests from this phone number. Please try again later.' }) };
   }
   if (customer_email && !isValidEmail(customer_email)) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Invalid email format' }) };
