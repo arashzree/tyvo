@@ -112,12 +112,16 @@ bot.on('message:new_chat_members', async (ctx, next) => {
     if (user.is_bot) continue; // covers the bot's own add-to-group event too
     const chatId = String(user.id);
     const label = labelFromTelegramUser(user);
-    const existing = await prisma.adminWhitelist.findUnique({ where: { chatId } });
-    if (existing) {
-      await prisma.adminWhitelist.update({ where: { chatId }, data: { label } }); // never touch role on repeat
-    } else {
-      await prisma.adminWhitelist.create({ data: { chatId, label, role: 'member' } });
-    }
+    // Atomic upsert (docs/AUDIT.md finding #7) -- the previous find-then-
+    // create/update had a TOCTOU window: two near-simultaneous events for
+    // the same chatId (rapid join/leave/rejoin) could both pass the
+    // existence check and then race on create, throwing an uncaught unique
+    // constraint violation for the loser.
+    await prisma.adminWhitelist.upsert({
+      where: { chatId },
+      create: { chatId, label, role: 'member' },
+      update: { label }, // never touch role on repeat
+    });
   }
 });
 
@@ -366,15 +370,18 @@ bot.command('addadmin', async (ctx) => {
 
   const label = await resolveChatLabel(ctx, chatId);
 
-  const existing = await prisma.adminWhitelist.findUnique({ where: { chatId } });
-  if (existing) {
-    await prisma.adminWhitelist.update({ where: { chatId }, data: { label } });
+  // Optimistic create, falling back to update on conflict (docs/AUDIT.md
+  // finding #7) -- avoids the find-then-create/update TOCTOU window a
+  // separate existence check would have; chatId's own unique constraint is
+  // the sole arbiter of "does this row already exist."
+  try {
+    await prisma.adminWhitelist.create({ data: { chatId, label, role } });
+    await ctx.reply(`✅ ${escapeHtml(label)} با نقش ${role} اضافه شد.`);
+  } catch (err) {
+    if (err.code !== 'P2002') throw err;
+    const existing = await prisma.adminWhitelist.update({ where: { chatId }, data: { label } });
     await ctx.reply(`ℹ️ ${escapeHtml(label)} از قبل در لیست است (نقش: ${existing.role}). برای تغییر نقش از /setrole استفاده کنید. نام به‌روزرسانی شد.`);
-    return;
   }
-
-  await prisma.adminWhitelist.create({ data: { chatId, label, role } });
-  await ctx.reply(`✅ ${escapeHtml(label)} با نقش ${role} اضافه شد.`);
 });
 
 /** owner only — add a regular staff member by chat_id alone. Always role='member'; no role argument, since member is the only safe default (see /addadmin for owner/rental_manager). */
@@ -392,15 +399,15 @@ bot.command('addmember', async (ctx) => {
 
   const label = await resolveChatLabel(ctx, chatId);
 
-  const existing = await prisma.adminWhitelist.findUnique({ where: { chatId } });
-  if (existing) {
-    await prisma.adminWhitelist.update({ where: { chatId }, data: { label } });
+  // Same optimistic-create/fallback-update pattern as /addadmin above.
+  try {
+    await prisma.adminWhitelist.create({ data: { chatId, label, role: 'member' } });
+    await ctx.reply(`✅ ${escapeHtml(label)} به‌عنوان عضو اضافه شد.`);
+  } catch (err) {
+    if (err.code !== 'P2002') throw err;
+    const existing = await prisma.adminWhitelist.update({ where: { chatId }, data: { label } });
     await ctx.reply(`ℹ️ ${escapeHtml(label)} از قبل در لیست است (نقش: ${existing.role}). برای تغییر نقش از /setrole استفاده کنید. نام به‌روزرسانی شد.`);
-    return;
   }
-
-  await prisma.adminWhitelist.create({ data: { chatId, label, role: 'member' } });
-  await ctx.reply(`✅ ${escapeHtml(label)} به‌عنوان عضو اضافه شد.`);
 });
 
 /** owner only — remove an admin, refusing if it would remove the last remaining owner or the last remaining rental_manager. */
