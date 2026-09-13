@@ -1,4 +1,4 @@
-const { Bot, webhookCallback } = require('grammy');
+const { Bot, webhookCallback, BotError } = require('grammy');
 const { PrismaClient } = require('@prisma/client');
 const { isSlotFree, computeRangeAvailability } = require('../../lib/availability');
 const { editMessageText, answerCallbackQuery } = require('../../lib/telegram');
@@ -15,6 +15,78 @@ const {
 
 const prisma = new PrismaClient();
 const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN);
+
+/** Short, greppable description of the update an error happened on — for console.error and the owner DM below, since we don't get a stack-trace-friendly request id from Netlify. */
+function describeUpdateContext(ctx) {
+  const parts = [];
+  if (ctx.from) parts.push(`from=${ctx.from.id}`);
+  if (ctx.chat) parts.push(`chat=${ctx.chat.id}`);
+  if (ctx.message && ctx.message.text) parts.push(`text="${ctx.message.text}"`);
+  if (ctx.callbackQuery && ctx.callbackQuery.data) parts.push(`callback_data="${ctx.callbackQuery.data}"`);
+  return parts.join(' ') || 'unknown update';
+}
+
+/**
+ * Global error boundary (docs/AUDIT.md finding #3).
+ *
+ * bot.catch() (registered below) only fires on grammy's handleUpdates()
+ * (plural) path, used by long-polling (bot.start()). This file uses
+ * webhookCallback's 'aws-lambda-async' adapter instead, which calls
+ * bot.handleUpdate() (singular) directly and does NOT route errors through
+ * bot.catch() — verified against node_modules/grammy: webhook.js awaits
+ * bot.handleUpdate() with no catch of its own, and handleUpdate() itself
+ * just wraps and rethrows a BotError rather than invoking the error handler;
+ * only handleUpdates() does that. Confirmed experimentally too: a thrown
+ * error inside a handler propagated straight past a registered bot.catch()
+ * when driven through handleUpdate() the way the webhook adapter does it.
+ * So the real boundary has to wrap the exported Lambda handler itself (see
+ * exports.handler below) — bot.catch() is kept only as a harmless
+ * defense-in-depth no-op, in case this ever runs under long polling instead
+ * (e.g. a future local dev script).
+ *
+ * Without this, any uncaught error — a Prisma hiccup, a bad Telegram API
+ * call, anything — failed completely silently: no reply to whoever
+ * triggered it, and nothing else to go on, since Netlify function log
+ * access has been 403ing all session (docs/ROLE_GAP.md). Three independent,
+ * best-effort steps, each isolated so a failure in one can't swallow the
+ * others: reply to whoever triggered it (if we know who), console.error
+ * with context to grep for if log access ever comes back, and DM every
+ * owner so a failure is visible *somewhere* immediately.
+ */
+async function handleUncaughtError(err) {
+  const ctx = err instanceof BotError ? err.ctx : undefined;
+  const underlyingError = err instanceof BotError ? err.error : err;
+  const context = ctx ? describeUpdateContext(ctx) : 'webhook handler (no update context available)';
+  console.error(`[telegram-webhook] uncaught error handling ${context}:`, underlyingError);
+
+  if (ctx) {
+    try {
+      if (ctx.callbackQuery) {
+        await ctx.answerCallbackQuery({ text: 'خطایی رخ داد. لطفاً دوباره تلاش کنید.', show_alert: true });
+      } else if (ctx.chat) {
+        await ctx.reply('خطایی رخ داد. لطفاً دوباره تلاش کنید.');
+      }
+    } catch (replyErr) {
+      console.error(`[telegram-webhook] also failed to notify the admin (${context}):`, replyErr);
+    }
+  }
+
+  try {
+    const owners = await prisma.adminWhitelist.findMany({ where: { role: 'owner' } });
+    const errorMessage = (underlyingError && underlyingError.message) || String(underlyingError);
+    const text = [
+      '🛑 <b>خطای داخلی ربات</b>',
+      '',
+      `منبع: <code>${escapeHtml(context)}</code>`,
+      `پیام خطا: <code>${escapeHtml(errorMessage)}</code>`,
+    ].join('\n');
+    await Promise.allSettled(owners.map((o) => bot.api.sendMessage(o.chatId, text, { parse_mode: 'HTML' })));
+  } catch (dmErr) {
+    console.error(`[telegram-webhook] also failed to DM owners (${context}):`, dmErr);
+  }
+}
+
+bot.catch(handleUncaughtError); // defense-in-depth only — see docstring above
 
 /** Shared by resolveChatLabel and the group-membership sync handlers below — builds a display label from a Telegram User (or ChatFullInfo, same shape for private chats) object. */
 function labelFromTelegramUser(user) {
@@ -532,6 +604,21 @@ function escapeHtml(s) {
   return String(s || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 }
 
-exports.handler = webhookCallback(bot, 'aws-lambda-async', {
+const rawWebhookHandler = webhookCallback(bot, 'aws-lambda-async', {
   secretToken: process.env.TELEGRAM_WEBHOOK_SECRET,
 });
+
+/** The actual error boundary — see handleUncaughtError's docstring above for why bot.catch() alone doesn't cover this path. */
+exports.handler = async (event, context) => {
+  try {
+    return await rawWebhookHandler(event, context);
+  } catch (err) {
+    await handleUncaughtError(err);
+    // Return 200 regardless: Telegram retries a webhook aggressively on any
+    // non-2xx response, and we've already done everything we can for this
+    // update (best-effort reply + owner DM) — returning an error here would
+    // just cause Telegram to hammer us with retries of an update we've
+    // already given up on, without anything productive coming of it.
+    return { statusCode: 200, body: '' };
+  }
+};
