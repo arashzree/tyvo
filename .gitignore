@@ -1,0 +1,12 @@
+# Local Netlify folder
+.netlify
+
+# Secrets — real values must never be committed
+.env
+.env.*
+!.env.example
+set-webhook.sh
+set-wbhook.sh
+
+# Dependencies
+node_modules/
