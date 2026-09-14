@@ -168,6 +168,34 @@ bot.use(async (ctx, next) => {
 });
 
 /** Entry point after the whitelist gate — greets the admin and lists commands available to their role. */
+/**
+ * Persistent reply-keyboard labels (docs/BOT_UX.md's persistent-keyboard
+ * layout). One source of truth: bot.hears(KB.x, ...) below matches these
+ * exact strings, and buildReplyKeyboard renders them, so a label can never
+ * drift out of sync between what's shown and what's listened for.
+ */
+const KB = {
+  whoami: '🪪 مشخصات',
+  available: '🟢 اسلات آزاد',
+  today: '📅 امروز',
+  calendar: '🗓️ تقویم',
+  addadmin: '➕ افزودن مدیر',
+  addmember: '👤 افزودن عضو',
+  removeadmin: '➖ حذف ادمین',
+  setrole: '🔧 تغییر نقش',
+};
+
+/** Role-filtered persistent reply keyboard — owner-only rows (admin management) are hidden for both member and rental_manager, matching /start's own menu gating. */
+function buildReplyKeyboard(role) {
+  const rows = [[KB.whoami, KB.available]];
+  if (role !== 'member') rows.push([KB.today, KB.calendar]);
+  if (role === 'owner') {
+    rows.push([KB.addadmin, KB.addmember]);
+    rows.push([KB.removeadmin, KB.setrole]);
+  }
+  return { keyboard: rows.map((row) => row.map((text) => ({ text }))), resize_keyboard: true };
+}
+
 bot.command('start', async (ctx) => {
   const lines = [
     `سلام ${escapeHtml(ctx.adminLabel)} 👋`,
@@ -195,11 +223,11 @@ bot.command('start', async (ctx) => {
       '🔧 تغییر نقش → /setrole'
     );
   }
-  await ctx.reply(lines.join('\n'));
+  await ctx.reply(lines.join('\n'), { reply_markup: buildReplyKeyboard(ctx.adminRole) });
 });
 
-/** §7 — /today (and /upcoming) lists confirmed bookings for the next 48h. owner/rental_manager only — leaks customer names/phones, member must never see this. */
-bot.command(['today', 'upcoming'], async (ctx) => {
+/** §7 — /today (and /upcoming) lists confirmed bookings for the next 48h. owner/rental_manager only — leaks customer names/phones, member must never see this. Shared verbatim by the /today command and the 📅 امروز reply-keyboard button (docs/BOT_UX.md) -- same function, not a reimplementation. */
+async function handleToday(ctx) {
   if (ctx.adminRole === 'member') {
     await ctx.reply('این دستور برای اعضا در دسترس نیست.');
     return;
@@ -222,10 +250,12 @@ bot.command(['today', 'upcoming'], async (ctx) => {
     (b) => `• <b>${escapeHtml(b.space.nameFa)}</b> — ${formatJalaaliDateTime(b.startAt)} — ${escapeHtml(b.customerName)} (<code>${b.referenceCode}</code>)`
   );
   await ctx.reply(['📅 <b>رزروهای ۴۸ ساعت آینده</b>', '', ...lines].join('\n'), { parse_mode: 'HTML' });
-});
+}
+bot.command(['today', 'upcoming'], handleToday);
+bot.hears(KB.today, handleToday);
 
-/** Any whitelisted role — just the whitelist gate above, no role restriction. */
-bot.command('whoami', async (ctx) => {
+/** Any whitelisted role — just the whitelist gate above, no role restriction. Shared by /whoami and the 🪪 مشخصات button. */
+async function handleWhoami(ctx) {
   const roleLabels = {
     owner: 'مدیر (owner)',
     rental_manager: 'مسئول رنتال (rental_manager)',
@@ -233,10 +263,12 @@ bot.command('whoami', async (ctx) => {
   };
   const roleLabel = roleLabels[ctx.adminRole] || ctx.adminRole;
   await ctx.reply(`شما: ${escapeHtml(ctx.adminLabel)}\nنقش: ${roleLabel}`);
-});
+}
+bot.command('whoami', handleWhoami);
+bot.hears(KB.whoami, handleWhoami);
 
-/** owner/rental_manager only — lists the next 14 days grouped by day. Leaks customer names and internal status, member must never see this. */
-bot.command('calendar', async (ctx) => {
+/** owner/rental_manager only — lists the next 14 days grouped by day. Leaks customer names and internal status, member must never see this. Shared by /calendar and the 🗓️ تقویم button. */
+async function handleCalendar(ctx) {
   if (ctx.adminRole === 'member') {
     await ctx.reply('این دستور برای اعضا در دسترس نیست.');
     return;
@@ -282,15 +314,27 @@ bot.command('calendar', async (ctx) => {
     ['📅 <b>تقویم رزروها (۱۴ روز آینده)</b>', '', sections.join('\n\n')].join('\n'),
     { parse_mode: 'HTML' }
   );
-});
+}
+bot.command('calendar', handleCalendar);
+bot.hears(KB.calendar, handleCalendar);
 
 const AVAILABLE_WINDOW_DAYS = 14; // matches /calendar's window
 
-/** Any role, including member — shows which slots are OPEN for one space over the next 14 days. Never shows who booked, their contact info, or a reference code, not even a count — open/closed per slot only, per docs/ROLE_GAP.md's member permissions. */
-bot.command('available', async (ctx) => {
+/**
+ * Any role, including member — shows which slots are OPEN for one space over
+ * the next 14 days. Never shows who booked, their contact info, or a
+ * reference code, not even a count — open/closed per slot only, per
+ * docs/ROLE_GAP.md's member permissions.
+ *
+ * Takes `query` as an explicit parameter rather than reading ctx.match
+ * directly, so the 🟢 اسلات آزاد reply-keyboard button (docs/BOT_UX.md) can
+ * call this exact function with query='' (bare call -> space picker,
+ * identical to typing /available with no argument) instead of trying to
+ * parse the button's own label text as if it were a search query.
+ */
+async function handleAvailable(ctx, query) {
   const spaces = await prisma.space.findMany({ where: { active: true }, orderBy: { sortOrder: 'asc' } });
 
-  const query = (ctx.match || '').trim().toLowerCase();
   const matches = query
     ? spaces.filter(
         (s) => s.slug.toLowerCase().includes(query) || s.name.toLowerCase().includes(query) || s.nameFa.includes(query)
@@ -340,7 +384,9 @@ bot.command('available', async (ctx) => {
     [`🟢 <b>اسلات‌های آزاد — ${escapeHtml(space.nameFa)}</b> (۱۴ روز آینده)`, '', sections.join('\n\n')].join('\n'),
     { parse_mode: 'HTML' }
   );
-});
+}
+bot.command('available', (ctx) => handleAvailable(ctx, (ctx.match || '').trim().toLowerCase()));
+bot.hears(KB.available, (ctx) => handleAvailable(ctx, ''));
 
 /** Shared by /addadmin and /addmember — resolves a chat_id to a display label via Telegram's getChat, falling back to the bare chat_id if the target hasn't started a chat with the bot yet (or getChat otherwise fails). */
 async function resolveChatLabel(ctx, chatId) {
@@ -353,13 +399,16 @@ async function resolveChatLabel(ctx, chatId) {
 }
 
 /** owner only — add an owner or rental_manager by chat_id (e.g. from @userinfobot). role is required: there is no safe default between two high-privilege roles. Use /addmember for regular staff. */
-bot.command('addadmin', async (ctx) => {
+// Takes `tokens` explicitly (not ctx.match) so the ➕ افزودن مدیر button can
+// call this with [] -- deterministically hitting the usage-hint branch,
+// same as typing a bare /addadmin, rather than trying to parse the
+// button's own emoji label as arguments.
+async function handleAddAdmin(ctx, tokens) {
   if (ctx.adminRole !== 'owner') {
     await ctx.reply('این دستور فقط برای مدیران است.');
     return;
   }
 
-  const tokens = (ctx.match || '').trim().split(/\s+/).filter(Boolean);
   const [chatId, role] = tokens;
   if (!chatId || !/^-?\d+$/.test(chatId) || !role || (role !== 'owner' && role !== 'rental_manager')) {
     await ctx.reply(
@@ -382,16 +431,17 @@ bot.command('addadmin', async (ctx) => {
     const existing = await prisma.adminWhitelist.update({ where: { chatId }, data: { label } });
     await ctx.reply(`ℹ️ ${escapeHtml(label)} از قبل در لیست است (نقش: ${existing.role}). برای تغییر نقش از /setrole استفاده کنید. نام به‌روزرسانی شد.`);
   }
-});
+}
+bot.command('addadmin', (ctx) => handleAddAdmin(ctx, (ctx.match || '').trim().split(/\s+/).filter(Boolean)));
+bot.hears(KB.addadmin, (ctx) => handleAddAdmin(ctx, []));
 
-/** owner only — add a regular staff member by chat_id alone. Always role='member'; no role argument, since member is the only safe default (see /addadmin for owner/rental_manager). */
-bot.command('addmember', async (ctx) => {
+/** owner only — add a regular staff member by chat_id alone. Always role='member'; no role argument, since member is the only safe default (see /addadmin for owner/rental_manager). Takes chatId explicitly, same reasoning as handleAddAdmin above, for the 👤 افزودن عضو button. */
+async function handleAddMember(ctx, chatId) {
   if (ctx.adminRole !== 'owner') {
     await ctx.reply('این دستور فقط برای مدیران است.');
     return;
   }
 
-  const chatId = (ctx.match || '').trim().split(/\s+/).filter(Boolean)[0];
   if (!chatId || !/^-?\d+$/.test(chatId)) {
     await ctx.reply('استفاده صحیح: /addmember <chat_id>\nمثال: /addmember 268537670\n(شناسه عددی چت را می‌توانید از رباتی مثل @userinfobot بگیرید)');
     return;
@@ -408,16 +458,17 @@ bot.command('addmember', async (ctx) => {
     const existing = await prisma.adminWhitelist.update({ where: { chatId }, data: { label } });
     await ctx.reply(`ℹ️ ${escapeHtml(label)} از قبل در لیست است (نقش: ${existing.role}). برای تغییر نقش از /setrole استفاده کنید. نام به‌روزرسانی شد.`);
   }
-});
+}
+bot.command('addmember', (ctx) => handleAddMember(ctx, (ctx.match || '').trim().split(/\s+/).filter(Boolean)[0]));
+bot.hears(KB.addmember, (ctx) => handleAddMember(ctx, undefined));
 
-/** owner only — remove an admin, refusing if it would remove the last remaining owner or the last remaining rental_manager. */
-bot.command('removeadmin', async (ctx) => {
+/** owner only — remove an admin, refusing if it would remove the last remaining owner or the last remaining rental_manager. Takes chatId explicitly for the ➖ حذف ادمین button, same reasoning as above. */
+async function handleRemoveAdmin(ctx, chatId) {
   if (ctx.adminRole !== 'owner') {
     await ctx.reply('این دستور فقط برای مدیران است.');
     return;
   }
 
-  const chatId = (ctx.match || '').trim().split(/\s+/).filter(Boolean)[0];
   if (!chatId) {
     await ctx.reply('استفاده صحیح: /removeadmin <chat_id>');
     return;
@@ -447,16 +498,17 @@ bot.command('removeadmin', async (ctx) => {
 
   await prisma.adminWhitelist.delete({ where: { chatId } });
   await ctx.reply('✅ ادمین حذف شد.');
-});
+}
+bot.command('removeadmin', (ctx) => handleRemoveAdmin(ctx, (ctx.match || '').trim().split(/\s+/).filter(Boolean)[0]));
+bot.hears(KB.removeadmin, (ctx) => handleRemoveAdmin(ctx, undefined));
 
-/** owner only — change an admin's role, with the same last-owner/last-rental_manager safety checks as /removeadmin. */
-bot.command('setrole', async (ctx) => {
+/** owner only — change an admin's role, with the same last-owner/last-rental_manager safety checks as /removeadmin. Takes tokens explicitly for the 🔧 تغییر نقش button, same reasoning as handleAddAdmin above. */
+async function handleSetRole(ctx, tokens) {
   if (ctx.adminRole !== 'owner') {
     await ctx.reply('این دستور فقط برای مدیران است.');
     return;
   }
 
-  const tokens = (ctx.match || '').trim().split(/\s+/).filter(Boolean);
   const [chatId, role] = tokens;
   if (!chatId || !role || (role !== 'owner' && role !== 'rental_manager' && role !== 'member')) {
     await ctx.reply('استفاده صحیح: /setrole <chat_id> <role>\nrole باید owner یا rental_manager یا member باشد.');
@@ -487,7 +539,9 @@ bot.command('setrole', async (ctx) => {
 
   await prisma.adminWhitelist.update({ where: { chatId }, data: { role } });
   await ctx.reply('✅ نقش به‌روزرسانی شد.');
-});
+}
+bot.command('setrole', (ctx) => handleSetRole(ctx, (ctx.match || '').trim().split(/\s+/).filter(Boolean)));
+bot.hears(KB.setrole, (ctx) => handleSetRole(ctx, []));
 
 /** Confirm / reject inline button taps. callback_data format: "confirm:<bookingId>" or "reject:<bookingId>". */
 bot.on('callback_query:data', async (ctx) => {
