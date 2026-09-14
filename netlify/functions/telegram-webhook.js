@@ -411,8 +411,10 @@ async function handleAddAdmin(ctx, tokens) {
 
   const [chatId, role] = tokens;
   if (!chatId || !/^-?\d+$/.test(chatId) || !role || (role !== 'owner' && role !== 'rental_manager')) {
+    // docs/BOT_UX.md §5: a copy-ready example, not a <chat_id> placeholder.
     await ctx.reply(
-      'استفاده صحیح: /addadmin <chat_id> <role>\nrole باید owner یا rental_manager باشد.\nبرای افزودن عضو عادی از /addmember استفاده کنید.\nمثال: /addadmin 268537670 owner'
+      'استفاده صحیح: <code>/addadmin 268537670 owner</code>\nrole باید owner یا rental_manager باشد.\nبرای افزودن عضو عادی از /addmember استفاده کنید.',
+      { parse_mode: 'HTML' }
     );
     return;
   }
@@ -443,7 +445,10 @@ async function handleAddMember(ctx, chatId) {
   }
 
   if (!chatId || !/^-?\d+$/.test(chatId)) {
-    await ctx.reply('استفاده صحیح: /addmember <chat_id>\nمثال: /addmember 268537670\n(شناسه عددی چت را می‌توانید از رباتی مثل @userinfobot بگیرید)');
+    await ctx.reply(
+      'استفاده صحیح: <code>/addmember 268537670</code>\n(شناسه عددی چت را می‌توانید از رباتی مثل @userinfobot بگیرید)',
+      { parse_mode: 'HTML' }
+    );
     return;
   }
 
@@ -470,7 +475,7 @@ async function handleRemoveAdmin(ctx, chatId) {
   }
 
   if (!chatId) {
-    await ctx.reply('استفاده صحیح: /removeadmin <chat_id>');
+    await ctx.reply('استفاده صحیح: <code>/removeadmin 268537670</code>', { parse_mode: 'HTML' });
     return;
   }
 
@@ -511,7 +516,10 @@ async function handleSetRole(ctx, tokens) {
 
   const [chatId, role] = tokens;
   if (!chatId || !role || (role !== 'owner' && role !== 'rental_manager' && role !== 'member')) {
-    await ctx.reply('استفاده صحیح: /setrole <chat_id> <role>\nrole باید owner یا rental_manager یا member باشد.');
+    await ctx.reply(
+      'استفاده صحیح: <code>/setrole 268537670 rental_manager</code>\nrole باید owner یا rental_manager یا member باشد.',
+      { parse_mode: 'HTML' }
+    );
     return;
   }
 
@@ -643,7 +651,10 @@ async function handleConfirm(ctx, booking) {
 
   for (const pending of otherPending) {
     const text = buildAutoFlagText({ booking: pending, space: pending.space });
-    const inlineKeyboard = [[{ text: '❌ رد این درخواست', callback_data: `reject:${pending.id}` }]];
+    // docs/BOT_UX.md §5: same wording for the same action everywhere -- the
+    // message body already asks "این درخواست را رد کنید؟", so the button
+    // doesn't need to repeat it; matches the plain '❌ رد' used elsewhere.
+    const inlineKeyboard = [[{ text: '❌ رد', callback_data: `reject:${pending.id}` }]];
     const copies = await prisma.telegramMessage.findMany({ where: { bookingId: pending.id } });
     await Promise.allSettled(copies.map((c) => editMessageText(c.chatId, c.messageId, text, { inlineKeyboard })));
   }

@@ -141,9 +141,10 @@ async function handleLookup(event) {
 async function notifyAdmins({ booking, space, hasConflict }) {
   const admins = await prisma.adminWhitelist.findMany({ where: { role: { in: ['owner', 'rental_manager'] } } });
   const text = buildNewBookingMessage({ booking, space, hasConflict });
+  // docs/BOT_UX.md §5: destructive left, primary right.
   const inlineKeyboard = [[
-    { text: '✅ تأیید', callback_data: `confirm:${booking.id}` },
     { text: '❌ رد', callback_data: `reject:${booking.id}` },
+    { text: '✅ تأیید', callback_data: `confirm:${booking.id}` },
   ]];
 
   const results = await Promise.allSettled(

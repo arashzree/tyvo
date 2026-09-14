@@ -105,42 +105,38 @@ HTML entities do). Followed 100% — every `parse_mode` in the codebase is
 `'HTML'` (`lib/telegram.js:30,38`); nothing uses `Markdown`/`MarkdownV2`.
 
 **IDs, times, and commands wrapped in `<code>`** so they're tap-to-copy
-and render LTR inside RTL text. **Partially followed**: reference codes
-and phone numbers are always wrapped (confirmed everywhere in
-`lib/notifications.js`). Booking times are **not** — `formatJalaaliDateTime`'s
-output is spliced into `تاریخ و ساعت: {jalaaliDateTime}` as plain text,
-unwrapped. Command names in usage hints are unwrapped too, because those
-specific replies don't set `parse_mode` at all (see next point) — so
-`<code>` isn't even available to them today.
+and render LTR inside RTL text. Reference codes and phone numbers are
+always wrapped (confirmed everywhere in `lib/notifications.js`). Booking
+times are **not** — `formatJalaaliDateTime`'s output is spliced into
+`تاریخ و ساعت: {jalaaliDateTime}` as plain text, unwrapped; not addressed
+yet. Command names in the four admin usage hints **now are** wrapped (see
+next point — fixed alongside the copy-ready-example rewrite, since both
+needed the same `parse_mode: 'HTML'` addition anyway).
 
 **Usage hints must show a complete copy-ready example, not `<chat_id>`
-placeholders.** Mixed compliance, checked directly against the four admin
-commands:
-- `/available` (`:303`) — fully compliant: bare call lists real, tappable
-  space slugs, no placeholder pattern at all.
-- `/addadmin` (`:366`) and `/addmember` (`:396`) — partially compliant:
-  each *does* include a concrete `مثال:` line with a real chat_id, but the
-  line above it still leads with the abstract `<chat_id> <role>` pattern,
-  and since neither reply sets `parse_mode`, that abstract line can't even
-  be `<code>`-wrapped to visually distinguish it from the copy-ready
-  example.
-- `/removeadmin` (`:422`) and `/setrole` (`:462`) — **not compliant**: only
-  the abstract placeholder line, no concrete example at all.
+placeholders.** All four admin commands fixed — each now leads with a
+concrete, `<code>`-wrapped, copy-ready command instead of an abstract
+`<chat_id>`/`<role>` pattern:
+- `/available` (`:347`) — already compliant before this pass: bare call
+  lists real, tappable space slugs, no placeholder pattern at all.
+- `/addadmin`, `/addmember`, `/removeadmin`, `/setrole` — previously mixed
+  (two had a concrete example buried under an abstract placeholder line,
+  two had no example at all). Now all four lead with
+  `استفاده صحیح: <code>/addadmin 268537670 owner</code>`-style text —
+  a real, complete command, wrapped in `<code>`.
 
 **Inline buttons: max 2 columns, destructive left, primary right, same
-wording for the same action everywhere.** Two real gaps here:
-- Confirm/reject (`bookings.js:144-146`): array order is confirm (✅) then
-  reject (❌) — primary first, destructive second. That's the reverse of
-  "destructive left, primary right" under the usual assumption that array
-  order maps to left-to-right screen position (Telegram inline keyboards
-  are UI chrome and aren't guaranteed to mirror for RTL chats the way
-  message text does, so this is worth confirming visually before
-  "fixing" it, but as written the code does not follow the stated rule).
-- Wording is **not** consistent for the same action: the original
-  notification's reject button says `❌ رد`, but the auto-flag button
-  (`telegram-webhook.js:592`, sent when another pending request needs
-  rejecting after a slot fills) says `❌ رد این درخواست` — different text
-  for the same `reject:{id}` action.
+wording for the same action everywhere.** Both gaps fixed:
+- Confirm/reject (`bookings.js:144-146`): array order is now reject (❌)
+  then confirm (✅) — destructive first, primary second, matching the
+  stated rule (Telegram inline keyboards aren't guaranteed to mirror for
+  RTL chats the way message text does, so worth a visual spot-check once
+  this is live, but the array order now matches the rule as written).
+- Wording is now consistent: the auto-flag button (`telegram-webhook.js`,
+  sent when another pending request needs rejecting after a slot fills)
+  says plain `❌ رد`, matching the original notification's reject button —
+  the auto-flag message body already asks "این درخواست را رد کنید؟", so
+  the button doesn't need to repeat it.
 
 **Error messages: what happened, why, what to do — never just "خطا."**
 Mostly followed. Good example: the SMS-failure notice (`handleConfirm`) —
