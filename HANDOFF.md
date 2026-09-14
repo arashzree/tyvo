@@ -1,140 +1,138 @@
-# Tyvo Backend — Handoff Notes (against Backend Build Brief v1)
+# Tyvo Backend — Handoff Notes
 
-Written from a sandboxed environment with **no internet access** — I could
-not install `@prisma/client`/`grammy`/`prisma` (npm registry is blocked),
-connect to a real Postgres instance, register a Telegram bot, or call
-Kavenegar. Everything below is real, reviewed code, hand-verified with
-`node --check` and — where possible without a database — actual unit
-tests against mock data. It has **not** run against a live DB, a live
-Telegram webhook, or live SMS. Treat this as a strong first draft for
-Cursor/K1 to install, wire real credentials into, and smoke-test for real.
+Written for whoever picks this project up next. Replaces the original
+handoff doc, which was written from a sandboxed, no-internet environment
+before almost everything below existed and had gone stale (it still
+described the pre-refactor owner/approver role model and several
+"not yet done" items that shipped long ago). This one reflects the system
+as of commit `b0b14ef`.
 
-## What's implemented, by phase
+**Docs map** — where to actually look for things:
+- `docs/AUDIT.md` — the authoritative, severity-ranked list of known gaps
+  and bugs, ordered by what to fix first. Start here if you're wondering
+  "what's broken / what's next."
+- `docs/ROLE_GAP.md` — the design record for the 3-role model
+  (owner/rental_manager/member) and the group-membership sync. Historical,
+  but accurate — describes decisions that shipped, not a stale plan.
+- `docs/BOT_UX.md` — message/emoji/button conventions, checked against the
+  live code. Read this before touching any bot-facing text.
+- `docs/OWNER_MANUAL.md` — non-technical, for the business owner. Not for
+  a developer, but know it exists so you can point them at it.
+- `docs/BOT_SPEC.md` — **stale, do not trust.** Predates the 3-role
+  refactor; still describes the old owner/approver model in places. Left
+  in place rather than deleted since parts of it (the data model section,
+  mostly) are still accurate, but verify against the actual code before
+  relying on anything in it. Superseded by `docs/ROLE_GAP.md` + this file.
 
-**Phase 1 — Data layer:** `prisma/schema.prisma` matches brief §3, plus one
-addition (see "Deviations" below). `prisma/seed.js` seeds the 7 spaces
-verbatim from the prototype's `rooms` array, in the same order.
+## What's implemented today
 
-**Phase 2 — Booking API:** all three endpoints (`spaces`, `availability`,
-`bookings`), full §5 rule set:
-- 12h minimum lead time (`lib/validate.js`)
-- server-side phone re-validation + Persian digit normalization (matches
-  the frontend's checks exactly, so both sides agree)
-- §5.1 slot-taken check (confirmed bookings + blocked_slots)
-- §5.3 conflict warning (checks for any other pending/confirmed booking on
-  the same slot before notifying admins)
-- Jalali-aware availability grid (`lib/availability.js`)
+**Public website** (`public/`) — bilingual (fa/en) booking flow against
+three Netlify Functions: `GET /api/spaces`, `GET /api/availability`,
+`POST /api/bookings`. Server-side validation mirrors the frontend
+(phone format, lead time, slot conflicts). `POST /api/bookings` has basic
+abuse protection (`lib/rateLimit.js`): an in-memory per-IP throttle and a
+DB-backed per-phone-number throttle.
 
-**Phase 3 — Telegram bot:** `netlify/functions/telegram-webhook.js` using
-grammy's `webhookCallback` (lambda mode, matches Netlify Functions).
-Whitelist gate, confirm/reject inline buttons, §5.4 race-condition
-re-check on confirm, §5.5 auto-flag of other pending bookings on the same
-slot, `/today` + `/upcoming` command. Edits every admin's copy of the
-message in place (see "Deviations").
+**Telegram bot** (`netlify/functions/telegram-webhook.js`, grammy) — three
+roles: `owner` (full visibility, manages the whitelist, no approve/reject),
+`rental_manager` (full visibility, approve/reject buttons), `member`
+(whitelisted staff, `/available <space>` only — free/busy, no customer
+data). Membership for `member` syncs automatically from one private
+Telegram group (`TYVO_GROUP_ID`); `/addadmin`/`/addmember` remain as
+manual fallbacks. A persistent reply keyboard (role-filtered) sits below
+the input for the common commands. A global error boundary
+(`handleUncaughtError`) replies to whoever triggered a failure, logs with
+context, and DMs every owner — this matters because Netlify function log
+access has been unreliable/403ing (see `docs/ROLE_GAP.md`), so the owner
+DM is currently the most reliable way anyone finds out something broke.
 
-**Phase 4 — SMS:** `lib/kavenegar.js` wired to the Verify Lookup
-(templated) API, called from the webhook on confirm/reject only — no SMS
-at submission, matching §6. **Kavenegar pattern approval is a manual step
-or already started; give me the exact approved template text once it's
-back, so I can fix the token order/count in `lib/kavenegar.js` to match.**
+**SMS** (`lib/sms.js`) — Kavenegar Verify Lookup API, sent only on
+confirm/reject (never at submission). Failures on *either* path are
+surfaced to the acting admin in-chat, not just logged silently.
 
-**Phases 5–7 (frontend wiring, QA, deploy):** not started — these need a
-live API to wire the frontend against, which needs Phase 1 actually
-migrated to a real database first.
+**Timezone handling** (`lib/jalaali.js`) — Asia/Tehran is a fixed UTC+3:30
+offset (Iran dropped DST in 2022), applied consistently in both
+directions: `dateFromJalaaliDateTime`/`dateFromJalaali` convert a Tehran
+wall-clock Jalali date/time to the correct real UTC instant;
+`instantToTehranParts` is the inverse, and every display path
+(`lib/notifications.js`) goes through it. This was a real, shipped bug
+until commit `462c938` — see `docs/AUDIT.md` finding #1 for what broke and
+how it was verified fixed. Covered by `test/jalaali.test.js`.
 
-## Verified without a database
+**Data model** (`prisma/schema.prisma`) — `Space`, `Booking`,
+`TelegramMessage` (one row per admin per booking, for in-place message
+edits), `BlockedSlot` (defined and read, but **still has no write path
+anywhere in the codebase** — the table can only ever be empty), and
+`AdminWhitelist` (`owner`/`rental_manager`/`member`, plus a permanently
+orphaned unused `approver` value Postgres can't drop without recreating
+the enum type).
 
-Ran real unit tests against mock data (not just syntax checks):
-- `lib/jalaali.js` — round-trips correctly, matches the known Nowruz
-  reference date (2024-03-20 = 1403/01/01), leap-year month lengths
-  correct. This is a byte-for-byte port of the already-tested prototype
-  code, not a reimplementation — client and server use identical math.
-- `lib/validate.js` — Iranian phone format + Persian digit normalization.
-- `lib/availability.js` — `computeMonthAvailability()` correctly closes
-  slots for lead-time, confirmed-overlap, and blocked-overlap; leaves
-  everything else open.
-- `lib/notifications.js` — message text renders correctly, including the
-  §5.3 conflict warning.
+**Tests** (`test/`) — `node --test` (no new dependency), scoped to exactly
+the round-trip and overlap math that would have caught the timezone bug:
+`lib/jalaali.js` and `lib/availability.js`. Nothing else has coverage.
+Run with `npm test`.
 
-## Deviations from the literal brief (flagging, per the brief's own "flag
-rather than guess" instruction)
+## Database status — read this before touching prisma/migrations
 
-1. **Slot hours: 10:00–20:00, not 09:00–20:00.** Brief §4 says
-   "09:00-20:00, matching prototype" — but the actual approved prototype's
-   `timeSlots` array starts at 10:00 (11 hourly slots, 10:00 through
-   20:00, no 09:00 slot). Since the brief says "matching prototype" and
-   the prototype is the tested/approved source of truth, I used the real
-   prototype list. `lib/availability.js`'s `TIME_SLOTS` constant is a
-   one-line change if you actually want a 09:00 opening slot.
+- Provider: **Neon**, not Supabase (despite `schema.prisma`'s top comment
+  listing both as brief-allowed options — Supabase was never actually
+  used; see the git history around 2026-09-14 if you want the full
+  back-and-forth on this).
+- The latest migration,
+  `20260914120000_add_confirmed_booking_exclusion_constraint`, **has not
+  been applied to any database as of this commit.** It adds a Postgres
+  `EXCLUDE` constraint (`bookings_no_overlap_confirmed`, via
+  `btree_gist`) preventing two `confirmed` bookings for the same space
+  from ever having overlapping time ranges — the DB-level backstop for
+  the confirm-race window described in `docs/AUDIT.md` finding #5. The
+  matching code change (`handleConfirm` in `telegram-webhook.js`) is
+  already live and will just never hit its new catch branch until the
+  migration is actually run. Before running it anywhere real: apply it to
+  a Neon branch first and confirm (a) the raw SQL is valid — it's never
+  been linted against a live Postgres instance, and (b) the exact Prisma
+  error shape for a violation matches what `handleConfirm` checks for
+  (`err.code === 'P2004'` or a constraint-name substring match — written
+  defensively for both, but neither has been observed against a real
+  violation yet).
+- No permanent staging environment exists. Testing changes safely means
+  standing up a throwaway Neon branch (Neon → your project → Branches →
+  Create branch) each time, pointing a temporary `DATABASE_URL` at it, and
+  discarding it after.
 
-2. **Added a `TelegramMessage` table**, not in the brief's §3 schema.
-   Brief §7 says notifications go to *all* `admin_whitelist` chat_ids
-   (plural) and confirm/reject should "edit the original message in
-   place." A single `booking.telegram_chat_id` / `telegram_message_id`
-   field can only track *one* admin's copy — if three admins each get
-   their own DM with buttons, editing "the" message after one of them
-   taps Confirm would leave the other two admins' copies stale and
-   clickable, which is exactly the kind of double-confirm risk §5.3/5.4
-   are trying to prevent. `TelegramMessage` (one row per booking per
-   admin who was notified) lets confirm/reject edit *every* copy. Small
-   schema addition, but changes migration output — flagging explicitly
-   rather than silently deviating from the literal §3 spec.
-
-## Admin roles (Telegram)
-
-`AdminWhitelist.role` is `owner` or `approver`:
-- **owner** — sees every new-booking notification (full text), but no
-  confirm/reject buttons. Can run `/addadmin`, `/removeadmin`, `/setrole`.
-  Cannot confirm/reject bookings (enforced both by omitting the buttons
-  and, defense in depth, by a role check in the callback handler).
-- **approver** (rental manager) — sees every new-booking notification WITH
-  confirm/reject buttons. Cannot manage the admin list.
-
-Commands and their access gates:
-- `/today`, `/upcoming` — any whitelisted admin.
-- `/whoami` — any whitelisted admin; replies with the caller's own label + role.
-- `/calendar` — any whitelisted admin; next 14 days, grouped by day, same
-  detail level for both roles (owners see everything, just can't act on it).
-- `/addadmin <chat_id> <name> <role>` — owner only.
-- `/removeadmin <chat_id>` — owner only.
-- `/setrole <chat_id> <role>` — owner only.
-
-**Safety invariant:** the system must never end up with zero owners.
-`/removeadmin` and `/setrole` both refuse if the target is the *only*
-remaining owner (removing or demoting them), so there's always at least
-one owner able to manage the admin list.
-
-## Not yet done / needs real infrastructure to finish
-
-- Race-condition guard on the *create* path (two people submitting the
-  same slot within milliseconds of each other) currently relies on
-  Postgres's own read-then-write timing — fine for expected traffic, but
-  if this needs to be airtight, wrap the confirmed-overlap check + insert
-  in a `SERIALIZABLE` transaction or add a partial unique index on
-  `(space_id, start_at) WHERE status = 'confirmed'`. Worth deciding once
-  you have a real DB to test the retry behavior against.
-- `GET /api/bookings/:reference_code` is built (brief flagged it as "cheap
-  to include now") but nothing calls it yet — it's there for whenever a
-  "check my booking" page happens.
-- No automated test suite wired up (no test runner installed, given the
-  network constraint) — the "unit tests" above were one-off `node -e`
-  scripts I ran by hand, not a committed test file. Worth turning into a
-  real Jest/Vitest suite once the repo has npm access.
-- Everything in brief §8 Phase 6 (bilingual pass, real-device test, actual
-  concurrent-booking race test, Jalali year-rollover edge case) needs a
-  live deployment — can't do any of that from here.
-
-## To actually run this
+## How to run this
 
 ```bash
 npm install
-cp .env.example .env   # fill in real values
-npx prisma migrate dev --name init
-npx prisma db seed
-netlify dev             # or deploy to Netlify and set env vars there
+cp .env.example .env   # fill in real values -- see the file for what each one is
+npx prisma migrate deploy   # NOT `migrate dev` against production -- see DB status above
+npx prisma db seed          # only on a fresh/empty database; seeds spaces + the first owner
+netlify dev                 # or deploy to Netlify and set the same env vars there
 ```
 
-Then register the Telegram webhook once deployed:
+Register the Telegram webhook once deployed:
 ```
 https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<site>/api/telegram/webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET>
 ```
+
+Run the test suite: `npm test`.
+
+## Known gaps
+
+Full list, ranked by severity, lives in `docs/AUDIT.md` — don't let this
+section drift out of sync with it; if you fix something, update the audit
+doc's finding, not just here. As of this commit, still open: no rate
+limiting beyond the basic IP/phone throttle already shipped; `BlockedSlot`
+has no write path (no way to manually block a slot for
+maintenance/cleaning); `Booking.adminActionBy` stores a mutable display
+label rather than a stable id (schema comment says "chat id or username,"
+code stores the label); no CI running `npm test` automatically on push;
+`GET /api/bookings?reference_code=` is fully implemented but unused by
+the frontend.
+
+## Data handling
+
+See `docs/OWNER_MANUAL.md` for the plain-language version. Technically:
+customer `name`/`phone`/`email`/`notes` are stored in `bookings` in
+plaintext, indefinitely — there's no automatic deletion or archival job
+anywhere in this codebase. If a retention policy is ever decided on, it
+needs to be built; nothing here enforces one today.

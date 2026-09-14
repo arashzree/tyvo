@@ -246,8 +246,11 @@ async function handleToday(ctx) {
     return;
   }
 
+  // docs/BOT_UX.md §5: one emoji per list item. Every row here is already
+  // status='confirmed' by the query above, so ✅ (the existing
+  // confirm/success emoji, not a new one) is the accurate per-item marker.
   const lines = bookings.map(
-    (b) => `• <b>${escapeHtml(b.space.nameFa)}</b> — ${formatJalaaliDateTime(b.startAt)} — ${escapeHtml(b.customerName)} (<code>${b.referenceCode}</code>)`
+    (b) => `✅ <b>${escapeHtml(b.space.nameFa)}</b> — ${formatJalaaliDateTime(b.startAt)} — ${escapeHtml(b.customerName)} (<code>${b.referenceCode}</code>)`
   );
   await ctx.reply(['📅 <b>رزروهای ۴۸ ساعت آینده</b>', '', ...lines].join('\n'), { parse_mode: 'HTML' });
 }

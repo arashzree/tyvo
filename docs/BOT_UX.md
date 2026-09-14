@@ -60,7 +60,7 @@ should draw from this table rather than invent new meanings:
 | 👤 | a person / member | `/addmember` |
 | ➖ | remove | `/removeadmin` |
 | 🔧 | modify / settings | `/setrole` |
-| ✅ | confirm / success | confirm button, confirmed-edit header |
+| ✅ | confirm / success | confirm button, confirmed-edit header, `/today` list items |
 | ❌ | reject / failure | reject button, rejected-edit header |
 | ⚠️ | warning | conflict warning, auto-flag header, SMS-failure notices |
 | 📩 | new incoming request | new-booking notification header |
@@ -93,11 +93,12 @@ matches this shape (e.g. `buildConfirmedEditText`: `✅ <b>تأیید شد</b>` 
 blank / body lines / blank / `کد رهگیری:` + `توسط:`).
 
 **Emoji**: one in the title, one per list item, never inside a sentence.
-Titles: followed everywhere. List items: **not fully followed** —
-`/today`'s booking lines (`telegram-webhook.js:~146`) use a bare `•` with
-no emoji at all; `/calendar`'s lines do carry one via the trailing status
-label (`⏳`/`✅`/`❌`/`☑️`), but that's incidental to the status, not a
-deliberate per-item marker. Worth fixing if `/today` is touched again.
+Followed. Titles: everywhere. List items: `/today`'s booking lines now
+lead with `✅` (reusing the existing confirm/success meaning, since every
+row is `status='confirmed'` by the query itself) instead of a bare `•`;
+`/calendar`'s lines carry one via the trailing status label
+(`⏳`/`✅`/`❌`/`☑️`), which doubles as its per-item marker since `/calendar`
+mixes statuses and the emoji there is actually meaningful, not decorative.
 
 **HTML parse mode only, never Markdown** — safer with Farsi (Markdown's
 `_`/`*`/`` ` `` collide with Farsi punctuation and RTL text far more than
