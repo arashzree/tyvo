@@ -61,6 +61,15 @@ model Booking {
   // handoff notes).
   telegramMessages TelegramMessage[]
 
+  // Also has a Postgres EXCLUDE constraint (bookings_no_overlap_confirmed,
+  // see migrations/20260914120000_add_confirmed_booking_exclusion_constraint)
+  // preventing two CONFIRMED bookings for the same space from having
+  // overlapping [start_at, end_at) ranges — docs/AUDIT.md finding #5's
+  // DB-level backstop for the confirm-race window. Prisma's schema DSL has
+  // no way to express EXCLUDE constraints, so it exists only in the raw
+  // migration SQL and won't show up here or in `prisma db pull` — don't
+  // let a future migration silently drop it by assuming this model is the
+  // full picture of what's enforced on this table.
   @@index([spaceId, startAt])
   @@index([status])
   @@map("bookings")

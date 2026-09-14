@@ -536,10 +536,25 @@ async function handleConfirm(ctx, booking) {
     return;
   }
 
-  const updated = await prisma.booking.update({
-    where: { id: booking.id },
-    data: { status: 'confirmed', adminActionBy: ctx.adminLabel, adminActionAt: new Date() },
-  });
+  // The read above and this write aren't atomic — two near-simultaneous
+  // confirms can both pass the read before either write lands. The DB-level
+  // bookings_no_overlap_confirmed EXCLUDE constraint (docs/AUDIT.md finding
+  // #5, see the matching migration) is the real backstop for that race:
+  // catch its violation here and surface the same friendly message as the
+  // pre-check above, instead of the generic error-boundary fallback.
+  let updated;
+  try {
+    updated = await prisma.booking.update({
+      where: { id: booking.id },
+      data: { status: 'confirmed', adminActionBy: ctx.adminLabel, adminActionAt: new Date() },
+    });
+  } catch (err) {
+    if (err.code === 'P2004' || String(err.message).includes('bookings_no_overlap_confirmed')) {
+      await ctx.answerCallbackQuery({ text: '⚠️ این اسلات در همین فاصله توسط رزرو دیگری تأیید شد. این درخواست را نمی‌توان تأیید کرد.', show_alert: true });
+      return;
+    }
+    throw err;
+  }
 
   await editAllCopies(booking.id, buildConfirmedEditText({ booking: updated, space: booking.space, adminLabel: ctx.adminLabel }));
   await ctx.answerCallbackQuery({ text: 'تأیید شد ✅' });
